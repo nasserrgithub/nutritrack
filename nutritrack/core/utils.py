@@ -1,20 +1,17 @@
 import time
-import logging
 import threading
 
-from pathlib import Path
 from functools import wraps
-from typing import Optional, Callable, Any, Generator
-from itertools import groupby
-
+from typing import Optional, Callable, Any
 from nutritrack.core.exceptions import (
     FoodNotFoundError,
     InvalidMacroError,
     GoalNotSetError,
     AIServiceError,
 )
+from nutritrack.core.logger import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def timed_log(func: Callable) -> Callable:

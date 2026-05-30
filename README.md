@@ -1371,6 +1371,402 @@ logger.info("hello")   # now prints correctly
 
 ---
 
+## 49 — Circular imports — causes and fix
+
+A circular import happens when two modules import each other:
+
+```
+models.py → imports utils.py → imports models.py → circular!
+```
+
+Python can't initialize either module because each depends on the other being ready first.
+
+**Fix — separate concerns into a one-way dependency chain:**
+
+```
+exceptions.py  ← imports nothing from your package
+utils.py       ← imports from exceptions only
+models.py      ← imports from utils and exceptions
+parsers.py     ← imports from models, utils, exceptions
+```
+
+Each layer only imports from layers below it — never above. Follow this rule and circular imports never happen.
+
+In NutriTrack, `parse_food_csv()` and `daily_totals()` were moved from `utils.py` to `parsers.py` because they import `Food` and `FoodEntry` from `models.py` — which already imports from `utils.py`.
+
+---
+
+## 50 — Generator pipelines — `get_daily_totals()`
+
+A generator pipeline chains lazy operations — each step processes one item at a time without loading everything into memory.
+
+```python
+def get_daily_totals(entries: list[FoodEntry]) -> Generator[dict, None, None]:
+    # NOTE: sorting in memory — in production, pass pre-sorted entries from DB
+    sorted_entries = sorted(entries, key=lambda e: e.logged_date, reverse=True)
+    for logged_date, members in groupby(sorted_entries, key=lambda e: e.logged_date):
+        day_entries = list(members)
+        yield {
+            "date": logged_date,
+            "total_calories": sum(e.scaled_calories() for e in day_entries),
+            "total_protein":  sum(e.scaled_protein()  for e in day_entries),
+            "total_carbs":    sum(e.scaled_carbs()     for e in day_entries),
+            "total_fat":      sum(e.scaled_fat()       for e in day_entries),
+            "entry_count":    len(day_entries),
+            "foods":          [e.food for e in day_entries],
+        }
+```
+
+Key decisions:
+- `reverse=True` — descending sort so first iteration = most recent day
+- `list(members)` — materialize the group before iterating multiple times
+- Generator expressions inside `sum()` — no intermediate list created
+- In production, sort happens at the database level using an index — no in-memory sort needed
+
+---
+
+## 51 — `Counter` for frequency counting
+
+`Counter` is a dict subclass that counts occurrences. Keys are items, values are counts. Best used when you need frequency analysis or top-N results.
+
+```python
+from collections import Counter
+
+food_counter: Counter[str] = Counter()
+food_counter["chicken breast"] += 1
+food_counter["chicken breast"] += 1
+food_counter["banana"] += 1
+
+food_counter.most_common(2)   # [('chicken breast', 2), ('banana', 1)]
+```
+
+Type annotation `Counter[str]` tells mypy the keys are strings — required when initializing an empty Counter since mypy can't infer the type.
+
+Use `food.name` (string) as the key rather than the `Food` object itself — non-frozen dataclasses are not hashable and can't be used as dict keys.
+
+---
+
+## 52 — Single-pass aggregation
+
+When processing large datasets, do everything in one loop rather than multiple passes. Multiple passes over the same data multiplies execution time linearly.
+
+```python
+# two passes — O(2n)
+totals = sum(e.scaled_calories() for e in entries)     # pass 1
+counter = Counter(e.food.name for e in entries)        # pass 2
+
+# one pass — O(n)
+for entry in entries:
+    total_calories += entry.scaled_calories()
+    food_counter[entry.food.name] += 1
+```
+
+In `MacroAggregator`, a single pass through `get_daily_totals()` accumulates all totals and food counts simultaneously.
+
+---
+
+## 53 — Database indexes
+
+An index is a separate data structure (B-tree) that keeps a column's values sorted for fast lookup. Without an index, every query does a full table scan — O(n). With an index, lookups are O(log n) and sorted retrievals are O(n) with no sorting cost.
+
+```python
+# SQLAlchemy — add index to a column
+class FoodEntry(Base):
+    id          = Column(Integer, primary_key=True)   # auto-indexed
+    logged_date = Column(Date, index=True)             # manually indexed
+    user_id     = Column(Integer, index=True)          # manually indexed
+```
+
+**Primary key vs index:**
+- Primary key — uniquely identifies each row, automatically indexed, one per table
+- Index — speeds up queries on any column, not necessarily unique, many per table
+
+**Tradeoff:**
+- Faster reads — queries on indexed columns skip full scans
+- Slower writes — every INSERT/UPDATE also updates the index
+- More storage — index takes disk space alongside the table
+
+Index columns you query frequently: `user_id` (every request filters by user), `logged_date` (history queries always sort by date), `email` (login lookups).
+
+---
+
+## 54 — `Optional` vs kwarg with default
+
+A kwarg with a default makes a parameter **optional to pass**. `Optional[T]` makes `None` an **explicitly valid value** that the code handles intentionally.
+
+```python
+# kwarg with default — fmt is always a str, None is not valid
+def setup_logging(fmt: str = "%(asctime)s ...") -> None:
+    formatter = logging.Formatter(fmt)   # always a string
+
+# Optional — None is valid and handled explicitly
+def setup_logging(fmt: Optional[str] = None) -> None:
+    default = "%(asctime)s ..."
+    formatter = logging.Formatter(fmt or default)   # handles None case
+```
+
+Use `Optional` when `None` is a meaningful signal that changes behavior. Use a plain default when the parameter always has a real value — simpler and more honest.
+
+---
+
+## 55 — Production logging setup
+
+`basicConfig()` is fragile in production — it silently does nothing if the root logger already has handlers (e.g. set by a third-party library). Build `setup_logging()` manually for full control:
+
+```python
+def setup_logging(
+    root_level: str = "DEBUG",
+    stream_handler_level: str = "INFO",
+    fmt: str = "%(asctime)s [%(levelname)s] %(name)s — %(message)s",
+) -> None:
+    formatter = logging.Formatter(fmt)
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(formatter)
+    handler.setLevel(getattr(logging, stream_handler_level.upper()))
+
+    root_logger = logging.getLogger()
+    root_logger.handlers.clear()        # clear existing handlers — always wins
+    root_logger.addHandler(handler)
+    root_logger.setLevel(getattr(logging, root_level.upper()))
+```
+
+**Two-gate system:**
+- Root logger level — drops messages before they reach any handler
+- Handler level — filters what this specific handler outputs
+
+Setting root to `DEBUG` and handler to `INFO` means the root captures everything, but only `INFO+` gets printed. Adding a `DEBUG` file handler later captures everything without touching the root level.
+
+**`get_logger()` wrapper:**
+
+```python
+def get_logger(name: str) -> logging.Logger:
+    return logging.getLogger(name)
+```
+
+Centralizes logger creation — if you swap Python's logging for `structlog` or `loguru` later, you only change `logger.py`, not every module.
+
+Usage in every module:
+```python
+from nutritrack.core.logger import get_logger
+logger = get_logger(__name__)   # __name__ = "nutritrack.core.utils"
+```
+
+Call `setup_logging()` once at app startup. Never call it per-module.
+
+---
+
+## 56 — `__name__` in modules
+
+`__name__` inside a module resolves to the full dotted import path, not just the filename:
+
+```python
+# inside nutritrack/core/utils.py
+__name__  →  "nutritrack.core.utils"
+
+# inside nutritrack/core/parsers.py
+__name__  →  "nutritrack.core.parsers"
+```
+
+This maps directly to the logger tree — `logging.getLogger(__name__)` places the logger in the correct position in the hierarchy automatically.
+
+---
+
+## 57 — NutriTrack Phase 1 file structure
+
+```
+nutritrack/
+├── .venv/
+├── data/
+│   └── foods.csv              ← seed data for pre-populating food database
+├── nutritrack/
+│   ├── __init__.py
+│   └── core/
+│       ├── __init__.py
+│       ├── models.py          ← Food, FoodEntry, MacroGoal, WeightEntry, User
+│       ├── exceptions.py      ← FoodNotFoundError, InvalidMacroError, GoalNotSetError, AIServiceError
+│       ├── utils.py           ← calculate_calories, calculate_macro_ratio + decorators
+│       ├── parsers.py         ← parse_food_csv, get_daily_totals, MacroAggregator
+│       └── logger.py          ← setup_logging, get_logger
+├── .gitignore
+└── requirements.txt
+```
+
+Dependency chain (one-way, no circular imports):
+```
+exceptions.py → utils.py → models.py → parsers.py
+                                ↑
+                           logger.py (standalone)
+```
+
+---
+
+## 58 — `logging.Formatter`, `StreamHandler`, `getLogger`, `basicConfig` — what each does
+
+**`logging.getLogger(name)`** — creates or retrieves a logger by name. Same name always returns the same object — it's a registry:
+
+```python
+logging.getLogger()                  # root logger — no name
+logging.getLogger("nutritrack")      # named logger
+logging.getLogger(__name__)          # named after current module
+```
+
+**`logging.Formatter`** — defines how a log message looks. Takes a format string:
+
+```python
+formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s — %(message)s")
+# 2026-05-29 14:30:00 [INFO] nutritrack.core.utils — message here
+```
+
+Without a formatter, messages print with no timestamp, level, or module name.
+
+**`logging.StreamHandler`** — defines where messages go. A handler is the output destination:
+
+```python
+logging.StreamHandler(sys.stdout)   # terminal
+logging.StreamHandler(sys.stderr)   # error stream
+logging.FileHandler("app.log")      # file
+```
+
+A logger can have multiple handlers simultaneously.
+
+**`logging.basicConfig()`** — a convenience shortcut that creates a `StreamHandler`, attaches a `Formatter`, and sets it on the root logger in one call. Roughly equivalent to manually creating all three above.
+
+---
+
+## 59 — Why `basicConfig()` fails in production
+
+`basicConfig()` silently does nothing if the root logger already has handlers:
+
+```python
+# Python's source code for basicConfig:
+def basicConfig(**kwargs):
+    if len(root.handlers) == 0:   # only runs if NO handlers exist
+        ...
+```
+
+If a third-party library calls `basicConfig()` before your app does, your configuration is silently ignored. No error, no warning.
+
+`setup_logging()` fixes this by explicitly clearing handlers first:
+
+```python
+root_logger.handlers.clear()   # always wins regardless of what ran before
+root_logger.addHandler(handler)
+```
+
+---
+
+## 60 — Why we need `basicConfig()` in the Python shell
+
+The shell starts with a fresh Python process — no logging configuration, no handlers. Every new shell session starts from zero.
+
+In a real app, `setup_logging()` is called once at startup and persists for the app's lifetime. In the shell there's no startup — you configure manually each session.
+
+```
+Real app: startup → setup_logging() once → all loggers work forever
+Shell:    open → no setup → logger exists but silent → manually call setup_logging()
+          close → everything gone → next session starts fresh
+```
+
+This is why Phase 3 wires `setup_logging()` into FastAPI's startup event — so it runs automatically every time the app starts.
+
+---
+
+## 61 — `setLevel()` on handler vs root logger — the two-gate system
+
+A log message must pass two gates before being output:
+
+```
+message → gate 1: root logger level → gate 2: handler level → output
+```
+
+**Root logger level** — drops messages before they reach any handler:
+```python
+root_logger.setLevel(logging.INFO)
+logger.debug("dropped here")    # never reaches any handler
+logger.info("passes gate 1")    # moves to handler check
+```
+
+**Handler level** — filters what this specific handler outputs:
+```python
+stream_handler.setLevel(logging.INFO)   # terminal shows INFO+
+file_handler.setLevel(logging.DEBUG)    # file captures everything
+```
+
+Setting root to `DEBUG` and handler to `INFO` means the root captures everything but only `INFO+` gets printed. Adding a `DEBUG` file handler later works without touching the root level — the root already passes everything through.
+
+---
+
+## 62 — `get_logger()` — why wrap `getLogger()`
+
+`get_logger()` is a thin wrapper that centralizes logger creation:
+
+```python
+# without wrapper — every module imports logging directly
+import logging
+logger = logging.getLogger(__name__)
+
+# with wrapper — every module imports from your package
+from nutritrack.core.logger import get_logger
+logger = get_logger(__name__)
+```
+
+Benefits:
+- If you swap Python's `logging` for `structlog` or `loguru` later, change only `logger.py` — not every module
+- Future extensibility — attach request context, custom filters, or correlation IDs in one place
+- Consistency — enforces a single way of creating loggers across the codebase
+
+---
+
+## 63 — MacroGoal effective date — how the app finds today's goal
+
+A new `MacroGoal` is only created when the user **changes** their goal — not every day. The app finds the active goal by querying the most recent one on or before today:
+
+```sql
+SELECT * FROM macro_goals
+WHERE user_id = 42 AND effective_date <= today
+ORDER BY effective_date DESC
+LIMIT 1
+```
+
+This means:
+- User registers → one `MacroGoal` created from TDEE calculation
+- Never changed → same goal applies every day indefinitely
+- Updated on Mar 15 → new `MacroGoal` created, applies from Mar 15 onward
+- Old goal preserved → full history of goal changes available
+
+`MacroAggregator` doesn't handle this lookup — by the time it receives a `MacroGoal`, the caller has already fetched the correct one for that day.
+
+---
+
+## 64 — TDEE and automatic goal calculation (Mifflin-St Jeor)
+
+Instead of users manually entering calorie goals, the app calculates their TDEE (Total Daily Energy Expenditure) from body metrics:
+
+```
+BMR (men)   = (10 × weight_kg) + (6.25 × height_cm) - (5 × age) + 5
+BMR (women) = (10 × weight_kg) + (6.25 × height_cm) - (5 × age) - 161
+```
+
+BMR × activity multiplier = TDEE:
+
+```
+Sedentary (desk job)        × 1.2
+Lightly active (1-3x/week)  × 1.375
+Moderately active (3-5x/week) × 1.55
+Very active (6-7x/week)     × 1.725
+```
+
+Standard macro split from TDEE:
+```
+Protein: 30% of calories ÷ 4 kcal/g
+Carbs:   40% of calories ÷ 4 kcal/g
+Fat:     30% of calories ÷ 9 kcal/g
+```
+
+`calculate_tdee()` will be added to `utils.py` and called during user registration to auto-generate the first `MacroGoal`.
+
+---
+
 ## Quick mental model
 
 Think of variables as _sticky notes_ attached to objects. Reassigning moves the sticky note to a new object. Mutating changes the object itself — all sticky notes pointing to it see the change.
