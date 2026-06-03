@@ -5,6 +5,13 @@ class FoodNotFoundError(Exception):
         super().__init__(f"Food '{food_name}' was not found in the database")
 
 
+class UserNotFoundError(Exception):
+    """Raised when a user is not found in the database."""
+
+    def __init__(self, user_id: int):
+        super().__init__(f"User with id of {user_id} was not found in the database")
+
+
 class InvalidMacroError(Exception):
     """Raised when a macro value is negative"""
 
