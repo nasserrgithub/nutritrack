@@ -1767,6 +1767,570 @@ Fat:     30% of calories ÷ 9 kcal/g
 
 ---
 
+## 65 — SQLAlchemy — engine vs session
+
+The engine is the connection pool manager — created once at app startup and lives for the app's lifetime. The session is a unit of work — short-lived, one per request.
+
+```python
+# engine — created once, never recreated
+engine = create_engine("postgresql://user:pass@localhost/nutritrack")
+
+# session — opened, used, closed per operation
+session = Session()
+session.add(food)
+session.commit()
+session.close()
+```
+
+Analogy: engine = a pool of database connections (shared, long-lived). Session = one conversation with the database (short-lived, per request).
+
+In Phase 3, FastAPI creates one session per HTTP request and closes it when the request is done. The engine stays alive the whole time.
+
+---
+
+## 66 — `get_session()` context manager
+
+Wraps session lifecycle so cleanup always happens — even if an exception occurs:
+
+```python
+@contextmanager
+def get_session() -> Generator[Session, None, None]:
+    session = SessionLocal()
+    try:
+        yield session
+        session.commit()    # commits on clean exit
+    except Exception as err:
+        session.rollback()  # rolls back on exception — releases DB locks
+        raise err
+    finally:
+        session.close()     # always closes — prevents connection leaks
+```
+
+Without rollback on exception — the transaction stays open, database holds row locks, other requests block. Without close in finally — connection leak exhausts the connection pool.
+
+The caller never manages cleanup:
+
+```python
+with get_session() as session:
+    session.add(food)
+    # no manual commit needed — context manager handles it
+```
+
+---
+
+## 67 — SQLAlchemy ORM models
+
+ORM models map Python classes to database tables. All models inherit from `Base` (a `DeclarativeBase` subclass):
+
+```python
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import String, Float, Integer, ForeignKey, func, DateTime
+from nutritrack.db.base import Base
+
+class FoodModel(Base):
+    __tablename__ = "foods"
+
+    id:               Mapped[int]           = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name:             Mapped[str]           = mapped_column(String(255), nullable=False, index=True)
+    protein_per_100g: Mapped[float]         = mapped_column(Float, nullable=False)
+    fiber_per_100g:   Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    created_at:       Mapped[datetime]      = mapped_column(DateTime, server_default=func.now())
+
+    food_entries: Mapped[list["FoodEntryModel"]] = relationship(back_populates="food")
+```
+
+Key column options:
+- `primary_key=True` — uniquely identifies each row, auto-indexed
+- `autoincrement=True` — database assigns ID automatically on insert
+- `nullable=False` — column required, cannot be NULL
+- `index=True` — creates a B-tree index for fast lookups
+- `server_default=func.now()` — database sets timestamp on insert
+- `unique=True` — enforces uniqueness (e.g. email)
+
+`Mapped[Optional[float]]` + `nullable=True` — must match. `Optional` is the Python type, `nullable` is the database constraint.
+
+---
+
+## 68 — SQLAlchemy relationships and `back_populates`
+
+Relationships let you navigate between related objects without writing SQL joins:
+
+```python
+# without relationship — manual query needed
+entries = session.query(FoodEntryModel).filter(FoodEntryModel.user_id == user.id).all()
+
+# with relationship — SQLAlchemy does the join
+entries = user.food_entries
+```
+
+`back_populates` creates a two-way link — must be defined on both sides, each referencing the attribute name on the other:
+
+```python
+class UserModel(Base):
+    food_entries: Mapped[list["FoodEntryModel"]] = relationship(back_populates="user")
+
+class FoodEntryModel(Base):
+    user: Mapped["UserModel"] = relationship(back_populates="food_entries")
+```
+
+**Naming convention:**
+- Foreign key column → `{model}_id` (e.g. `user_id`, `food_id`) — stores the integer
+- Relationship attribute → `{model}` (e.g. `user`, `food`) — stores the Python object
+
+**List vs single:**
+- "One" side (user has many entries) → `Mapped[list["FoodEntryModel"]]`
+- "Many" side (entry belongs to one user) → `Mapped["UserModel"]`
+
+Relationships are optional — foreign keys alone are enough for the database to enforce the link. Relationships are a Python-level convenience.
+
+---
+
+## 69 — Foreign keys vs primary keys vs indexes
+
+| | Primary key | Foreign key | Index |
+|---|---|---|---|
+| Purpose | Uniquely identifies a row | References another table's primary key | Speeds up queries |
+| Unique? | Always | Not required | Optional |
+| Per table | One | Many | Many |
+| Auto-indexed? | Yes | No (add manually) | N/A |
+
+```python
+class FoodEntryModel(Base):
+    id:      Mapped[int] = mapped_column(Integer, primary_key=True)          # PK
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True) # FK + index
+    food_id: Mapped[int] = mapped_column(ForeignKey("foods.id"), index=True) # FK + index
+```
+
+Always index foreign key columns — every query filters by them, and without an index it's a full table scan.
+
+---
+
+## 70 — `Base` in its own file — avoiding circular imports
+
+`Base` must be importable by both `models.py` and `database.py`. Putting it in `database.py` risks circular imports if `database.py` ever needs to import from `models.py`. Solution — give `Base` its own file:
+
+```python
+# nutritrack/db/base.py
+from sqlalchemy.orm import DeclarativeBase
+
+class Base(DeclarativeBase):
+    pass
+```
+
+Then import from it everywhere:
+
+```python
+# database.py
+from nutritrack.db.base import Base  # noqa: F401 — imported for Alembic
+
+# models.py
+from nutritrack.db.base import Base
+```
+
+`# noqa: F401` — tells linters not to flag `Base` as unused in `database.py`. It's imported there so Alembic can find all models through one entry point.
+
+One-way dependency chain to prevent all circular imports:
+
+```
+base.py → nothing
+exceptions.py → nothing
+utils.py → exceptions
+models.py (core) → utils, exceptions
+db/base.py → nothing
+db/models.py → db/base
+db/database.py → db/base
+db/repositories.py → db/models, db/database, core/exceptions
+db/schemas.py → nothing (pure Pydantic)
+db/seed.py → all of the above
+```
+
+---
+
+## 71 — Alembic migrations — setup and usage
+
+Alembic tracks database schema changes as versioned migration scripts. Each script has `upgrade()` and `downgrade()` so you can move forward or backward without losing data.
+
+**One-time setup:**
+
+```bash
+# 1. initialize alembic (run from project root)
+alembic init alembic
+
+# 2. edit alembic.ini — leave sqlalchemy.url blank
+sqlalchemy.url =
+
+# 3. edit alembic/env.py — add at the top:
+from dotenv import load_dotenv
+import os
+load_dotenv()
+config.set_main_option("sqlalchemy.url", os.getenv("DATABASE_URL", ""))
+
+# import Base and all models so Alembic can detect them
+from nutritrack.db.base import Base
+from nutritrack.db import models  # noqa: F401
+target_metadata = Base.metadata
+```
+
+**Daily usage:**
+
+```bash
+# generate a migration from ORM model changes
+alembic revision --autogenerate -m "add timezone to users"
+
+# apply all pending migrations
+alembic upgrade head
+
+# roll back one migration
+alembic downgrade -1
+
+# see migration history
+alembic history
+
+# see current version
+alembic current
+```
+
+**How it works:** `alembic_version` table in the database tracks which migrations have been applied. Each migration file has a `revision` ID and a `down_revision` pointing to its parent — forming a chain.
+
+```
+migration 001 (down_revision=None)    ← first migration
+migration 002 (down_revision=001)
+migration 003 (down_revision=002)     ← head
+```
+
+**PostgreSQL permissions needed:**
+
+```sql
+GRANT ALL PRIVILEGES ON DATABASE nutritrack TO nutritrack_user;
+GRANT ALL ON SCHEMA public TO nutritrack_user;
+ALTER DATABASE nutritrack OWNER TO nutritrack_user;
+```
+
+---
+
+## 72 — Repository pattern
+
+Repositories create an abstraction layer between application logic and database queries. Each model gets one repository that owns all its queries.
+
+```python
+class FoodRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def create(self, name: str, ...) -> FoodModel:
+        food = FoodModel(name=name, ...)
+        self.session.add(food)
+        self.session.flush()   # assigns id without committing
+        return food
+
+    def get_by_id(self, food_id: int) -> FoodModel:
+        food = self.session.get(FoodModel, food_id)
+        if not food:
+            raise FoodNotFoundError(str(food_id))
+        return food
+
+    def get_by_name(self, name: str) -> Optional[FoodModel]:
+        return self.session.query(FoodModel)\
+            .filter(FoodModel.name.ilike(f"%{name}%"))\
+            .first()
+```
+
+Benefits:
+- Single place for all queries — easy to find, debug, and change
+- Testable — swap real repository for a fake in tests
+- Readable — `food_repo.get_by_name("chicken")` vs raw SQLAlchemy query
+
+Usage:
+
+```python
+with get_session() as session:
+    repo = FoodRepository(session)
+    food = repo.get_by_name("chicken breast")
+```
+
+---
+
+## 73 — `session.get()` vs `session.query()`
+
+| | `session.get()` | `session.query()` |
+|---|---|---|
+| Lookup by | primary key only | any column |
+| Returns | one object or None | query builder |
+| Cache check | yes — identity map | no |
+| Use when | you have the ID | filtering/sorting/joining |
+
+```python
+# session.get — primary key lookup, checks identity map cache
+food = session.get(FoodModel, 42)
+
+# session.query — flexible filtering
+food = session.query(FoodModel)\
+    .filter(FoodModel.name.ilike("%chicken%"))\
+    .first()
+
+# .first() — returns first result or None, never raises
+# .all()   — returns list of all results
+# .one()   — returns exactly one, raises if 0 or more than 1
+```
+
+---
+
+## 74 — `session.flush()` vs `session.commit()`
+
+```python
+session.flush()   # writes SQL to DB within current transaction — assigns auto-generated IDs
+                  # not yet permanent — can still be rolled back
+
+session.commit()  # makes all changes permanent — cannot be rolled back
+```
+
+Use `flush()` when you need the auto-generated `id` immediately (e.g. to log it or use it in another insert) but want to keep everything in one transaction.
+
+---
+
+## 75 — Return type design — `Optional` vs exception
+
+```python
+def get_by_id(self, food_id: int) -> FoodModel:        # raises FoodNotFoundError if missing
+def get_by_name(self, name: str) -> Optional[FoodModel]: # returns None if missing
+```
+
+Rule of thumb:
+- `Optional` return — absence is expected and normal (food might not exist yet — trigger AI lookup)
+- Exception — absence is unexpected (you have an ID, it should exist)
+
+The return type tells the caller what to expect. mypy catches cases where you use the result without checking for `None`.
+
+---
+
+## 76 — Pydantic schemas — three data shapes
+
+The same entity has three different shapes:
+
+```
+Request  (what comes IN)   — user-provided fields only, no id, no created_at
+Database (what's STORED)   — everything including id, timestamps, relationships
+Response (what goes OUT)   — controlled subset, no sensitive fields
+```
+
+```python
+class FoodCreate(BaseModel):         # request — what user sends
+    name: str = Field(..., min_length=1, max_length=255)
+    protein_per_100g: float = Field(..., ge=0)
+    ...
+
+class FoodResponse(BaseModel):       # response — what user receives
+    id: int
+    name: str
+    protein_per_100g: float
+    created_at: datetime
+    model_config = {"from_attributes": True}
+```
+
+`user_id` never appears in request schemas — it comes from the JWT token. `id` and `created_at` never appear in create schemas — the database assigns them.
+
+---
+
+## 77 — Pydantic `Field()` constraints
+
+```python
+from pydantic import BaseModel, Field
+
+class FoodCreate(BaseModel):
+    name: str           = Field(..., min_length=1, max_length=255)  # required, length limits
+    protein_per_100g: float = Field(..., ge=0)    # required, >= 0
+    weight_g: float     = Field(..., gt=0)        # required, > 0 (strictly positive)
+    age: int            = Field(..., ge=1, le=120) # required, 1-120
+    source: str         = Field(default="manual") # optional with default
+    logged_date: date   = Field(default_factory=date.today)  # dynamic default
+```
+
+- `...` — required, no default
+- `ge` — greater than or equal (numbers)
+- `gt` — greater than (numbers)
+- `le` — less than or equal (numbers)
+- `lt` — less than (numbers)
+- `min_length`, `max_length` — string length limits
+- `default` — static default value
+- `default_factory` — callable called fresh on each instantiation
+
+---
+
+## 78 — `@field_validator` — custom validation logic
+
+Use when `Field()` constraints aren't expressive enough:
+
+```python
+from pydantic import field_validator
+
+class UserCreate(BaseModel):
+    email: str
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, v: str) -> str:
+        if "@" not in v:
+            raise ValueError("Invalid email — must contain @")
+        return v   # must return the value
+```
+
+Rules:
+- Must be `@classmethod`
+- Must return the value (can transform it too e.g. `return v.lower()`)
+- Can validate multiple fields: `@field_validator("protein_g", "carbs_g", "fat_g")`
+
+Use `Field()` constraints for simple rules. Use `@field_validator` for logic that can't be expressed as a simple constraint.
+
+---
+
+## 79 — `model_config = {"from_attributes": True}`
+
+Tells Pydantic to read from object attributes, not just dict keys. Required on response schemas that convert SQLAlchemy objects to Pydantic models:
+
+```python
+class FoodResponse(BaseModel):
+    id: int
+    name: str
+    model_config = {"from_attributes": True}
+
+food_model = session.get(FoodModel, 1)         # SQLAlchemy object
+response = FoodResponse.model_validate(food_model)  # reads food_model.id, food_model.name
+```
+
+Without it — `model_validate()` only works with dicts, not SQLAlchemy objects.
+
+Only needed on response schemas — request schemas receive plain JSON dicts from FastAPI.
+
+---
+
+## 80 — `model_validate()` and `model_dump()`
+
+```python
+# model_validate — create Pydantic model from dict or object
+food_data = {"id": 1, "name": "chicken breast"}
+response = FoodResponse.model_validate(food_data)
+
+food_orm = session.get(FoodModel, 1)
+response = FoodResponse.model_validate(food_orm)   # needs from_attributes: True
+
+# model_dump — convert Pydantic model back to dict
+food_create = FoodCreate(name="chicken", protein_per_100g=31.0, ...)
+food_create.model_dump()
+# {"name": "chicken", "protein_per_100g": 31.0, ...}
+```
+
+Full API flow in NutriTrack:
+
+```
+POST /foods {"name": "chicken", ...}
+    ↓
+FoodCreate.model_validate(request_body)   # validate incoming JSON
+    ↓
+FoodRepository.create(**food_create.model_dump())  # save to DB
+    ↓
+FoodResponse.model_validate(food_model)   # convert DB object to response
+    ↓
+{"id": 1, "name": "chicken", "created_at": "..."}
+```
+
+---
+
+## 81 — Why Pydantic AND SQLAlchemy constraints
+
+Both serve different purposes — neither replaces the other:
+
+```
+Layer 1 — Pydantic     ← catches bad data at API boundary, fast, user-friendly errors
+Layer 2 — SQLAlchemy   ← type mapping
+Layer 3 — PostgreSQL   ← last resort safety net
+```
+
+Pydantic fails fast — bad data is rejected before any DB round trip. PostgreSQL constraint errors are cryptic; Pydantic errors are clean JSON the frontend can display. PostgreSQL constraints protect data integrity even if something bypasses the API (seed scripts, direct inserts, other services).
+
+Response schemas have no constraints — data coming out of the database has already been validated twice on the way in.
+
+---
+
+## 82 — Database seeding and idempotency
+
+A seed script pre-populates the database with initial data. Must be **idempotent** — running it multiple times produces the same result as running it once. Check before inserting:
+
+```python
+def seed_foods():
+    csv_path = Path(__file__).parent.parent.parent / "data" / "foods.csv"
+    with get_session() as session:
+        fr = FoodRepository(session)
+        for food in parse_food_csv(csv_path):
+            if fr.get_by_name(food.name):
+                logger.info(f"Skipping {food.name} — already exists")
+                continue
+            fr.create(name=food.name, ...)
+
+if __name__ == "__main__":
+    seed_foods()
+```
+
+Run with: `python -m nutritrack.db.seed`
+
+One session for the entire operation — not one per food. Batch inserts are one transaction, one commit, much faster than N separate transactions.
+
+---
+
+## 83 — `Path(__file__)` — file-relative paths
+
+`__file__` holds the absolute path of the current file. Use `.parent` to navigate up the directory tree, `/` to join path segments:
+
+```python
+from pathlib import Path
+
+# inside nutritrack/db/seed.py
+Path(__file__)                           # nutritrack/db/seed.py
+Path(__file__).parent                    # nutritrack/db/
+Path(__file__).parent.parent             # nutritrack/
+Path(__file__).parent.parent.parent      # project root
+Path(__file__).parent.parent.parent / "data" / "foods.csv"  # project root/data/foods.csv
+```
+
+Safer than relative paths like `"data/foods.csv"` — relative paths depend on where you run the script from. `Path(__file__)` always knows where the file itself lives.
+
+---
+
+## 84 — YAGNI — You Aren't Gonna Need It
+
+Only add code when there is a real use case for it. Don't build `get_by_food_id()` on `FoodEntryRepository` just because it might be useful someday — add it when a feature actually needs it.
+
+Benefits: less code to maintain, less surface area for bugs, cleaner codebase. If a feature needs it in a later phase, add it then.
+
+Applied in NutriTrack: `FoodEntryRepository` only has `get_by_user()` and `get_by_user_and_date()` — the two queries the dashboard actually needs.
+
+---
+
+## 85 — NutriTrack Phase 2 file structure
+
+```
+nutritrack/
+├── data/
+│   └── foods.csv              ← seed data (stays at project root, not in package)
+├── alembic/
+│   ├── env.py                 ← configured to load DATABASE_URL from .env
+│   └── versions/
+│       └── 2a6551a59786_initial_tables.py
+├── alembic.ini                ← sqlalchemy.url left blank (loaded from .env)
+├── nutritrack/
+│   ├── core/                  ← Phase 1 (unchanged)
+│   └── db/
+│       ├── __init__.py
+│       ├── base.py            ← DeclarativeBase — own file to avoid circular imports
+│       ├── database.py        ← engine, SessionLocal, get_session()
+│       ├── models.py          ← SQLAlchemy ORM models for all 5 tables
+│       ├── repositories.py    ← FoodRepository, UserRepository, FoodEntryRepository
+│       ├── schemas.py         ← Pydantic request/response schemas
+│       └── seed.py            ← idempotent seed script
+└── .env                       ← DATABASE_URL (never committed to git)
+```
+
+---
+
 ## Quick mental model
 
 Think of variables as _sticky notes_ attached to objects. Reassigning moves the sticky note to a new object. Mutating changes the object itself — all sticky notes pointing to it see the change.

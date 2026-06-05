@@ -1,4 +1,4 @@
-.cname,protein_per_100g,carbs_per_100g,fat_per_100g,fiber_per_100g
+name,protein_per_100g,carbs_per_100g,fat_per_100g,fiber_per_100g
 chicken breast,31.0,0.0,3.6,0.0
 brown rice,2.6,23.0,0.9,1.8
 whole egg,13.0,1.1,11.0,0.0
