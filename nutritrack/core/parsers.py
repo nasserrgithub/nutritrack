@@ -67,6 +67,7 @@ class MacroAggregator:
         self.total_protein = 0
         self.total_carbs = 0
         self.total_fat = 0
+        self.entry_count = 0
         self.food_counter: Counter[str] = Counter()
         self.latest_food_entry = None
         is_first = True
@@ -86,6 +87,7 @@ class MacroAggregator:
             self.total_protein += daily_total["total_protein"]
             self.total_carbs += daily_total["total_carbs"]
             self.total_fat += daily_total["total_fat"]
+            self.entry_count += daily_total["entry_count"]
 
             # Count the foods per day
             for food in daily_total["foods"]:

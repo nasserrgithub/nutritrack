@@ -1,8 +1,13 @@
 from typing import Optional
 from sqlalchemy.orm import Session
+from sqlalchemy import desc
 from datetime import date
-from nutritrack.db.models import FoodModel, UserModel, FoodEntryModel
-from nutritrack.core.exceptions import FoodNotFoundError, UserNotFoundError
+from nutritrack.db.models import FoodModel, UserModel, FoodEntryModel, MacroGoalModel
+from nutritrack.core.exceptions import (
+    FoodNotFoundError,
+    UserNotFoundError,
+    GoalNotSetError,
+)
 from nutritrack.core.logger import get_logger
 
 logger = get_logger(__name__)
@@ -151,3 +156,46 @@ class FoodEntryRepository:
             .all()
         )
         return food_entry
+
+
+class MacroGoalRepository:
+    def __init__(self, session: Session):
+        self.session = session
+
+    def create(
+        self,
+        user_id: int,
+        calories: float,
+        protein_g: float,
+        carbs_g: float,
+        fat_g: float,
+        effective_date: date,
+    ) -> MacroGoalModel:
+
+        macro_goal = MacroGoalModel(
+            user_id=user_id,
+            calories=calories,
+            protein_g=protein_g,
+            carbs_g=carbs_g,
+            fat_g=fat_g,
+            effective_date=effective_date,
+        )
+        self.session.add(macro_goal)
+        self.session.flush()
+
+        logger.info(f"Macro goal created with effective date of {effective_date}")
+        return macro_goal
+
+    def get_active(self, user_id: int, as_of_date: date) -> MacroGoalModel:
+        macro_goal = (
+            self.session.query(MacroGoalModel)
+            .filter(MacroGoalModel.user_id == user_id)
+            .filter(MacroGoalModel.effective_date <= as_of_date)
+            .order_by(desc(MacroGoalModel.effective_date))
+            .first()
+        )
+
+        if not macro_goal:
+            raise GoalNotSetError()
+
+        return macro_goal

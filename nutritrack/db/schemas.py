@@ -95,3 +95,37 @@ class LoginRequest(BaseModel):
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
+
+
+class MacroGoalCreate(BaseModel):
+    calories: float = Field(..., gt=0)
+    protein_g: float = Field(..., ge=0)
+    carbs_g: float = Field(..., ge=0)
+    fat_g: float = Field(..., ge=0)
+    effective_date: date = Field(default_factory=date.today)
+
+
+class MacroGoalResponse(BaseModel):
+    id: int
+    user_id: int
+    calories: float
+    protein_g: float
+    carbs_g: float
+    fat_g: float
+    effective_date: date
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class DailySummaryResponse(BaseModel):
+    date: date
+    total_calories: float
+    total_protein: float
+    total_carbs: float
+    total_fat: float
+    entry_count: int
+    remaining_calories: float
+    remaining_protein: float
+    remaining_carbs: float
+    remaining_fat: float

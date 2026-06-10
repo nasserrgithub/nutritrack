@@ -2331,6 +2331,606 @@ nutritrack/
 
 ---
 
+## 86 — REST — Representational State Transfer
+
+REST is a set of conventions for designing APIs that use HTTP in a predictable, consistent way. Everything is a resource, and you interact with resources using standard HTTP methods.
+
+```
+GET    /foods          → read all foods
+GET    /foods/1        → read food with id=1
+POST   /foods          → create a new food
+PUT    /foods/1        → update food with id=1
+DELETE /foods/1        → delete food with id=1
+```
+
+HTTP status codes carry meaning:
+```
+200 OK           → success
+201 Created      → resource created
+400 Bad Request  → malformed request
+401 Unauthorized → not logged in
+403 Forbidden    → logged in but not allowed
+404 Not Found    → resource doesn't exist
+422 Unprocessable → validation failed
+500 Server Error → something broke on the server
+503 Service Unavailable → external service down
+```
+
+Before REST, APIs used RPC-style — action-based URLs with no consistency:
+```
+GET /getAllFoods
+POST /createNewFood
+POST /deleteFood?id=1   ← POST for a delete? confusing
+```
+
+REST improved predictability — a developer who knows REST conventions can guess your API's endpoints without documentation.
+
+---
+
+## 87 — FastAPI basics
+
+FastAPI is a Python web framework for building REST APIs. A Python function becomes an HTTP endpoint by decorating it with `@app.get()`, `@app.post()`, etc.:
+
+```python
+from fastapi import FastAPI
+
+app = FastAPI(
+    title="NutriTrack API",
+    description="Food calorie and macro tracker",
+    version="0.1.0",
+)
+
+@app.get("/health")
+def health_check():
+    return {"status": "ok"}
+```
+
+FastAPI automatically:
+- Parses and validates request bodies using Pydantic
+- Serializes responses to JSON
+- Generates interactive API docs at `/docs`
+- Returns 422 for validation errors
+
+Run with uvicorn:
+```bash
+uvicorn nutritrack.api.main:app --reload
+```
+
+`--reload` restarts the server on file changes — essential during development.
+
+---
+
+## 88 — FastAPI routers
+
+Routers group related endpoints. Instead of defining everything in one file, split by feature:
+
+```python
+# foods.py
+from fastapi import APIRouter
+router = APIRouter()
+
+@router.get("/")
+def get_foods(): ...
+
+@router.post("/")
+def create_food(): ...
+```
+
+```python
+# main.py
+from nutritrack.api.routers import foods
+
+app.include_router(foods.router, prefix="/foods", tags=["foods"])
+# prefix="/foods" → all routes in foods.router get /foods prepended
+# tags=["foods"]  → groups endpoints in /docs
+```
+
+`GET /` in `foods.py` + `prefix="/foods"` = `GET /foods/`
+
+---
+
+## 89 — FastAPI lifespan — startup and shutdown
+
+`lifespan` runs code at app startup (before `yield`) and shutdown (after `yield`):
+
+```python
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    setup_logging()                        # startup
+    logger.info("API starting up")
+    yield
+    logger.info("API shutting down")       # shutdown
+
+app = FastAPI(lifespan=lifespan)
+```
+
+Use for: initializing logging, connecting to services, loading models. Replaces the deprecated `@app.on_event("startup")` pattern.
+
+---
+
+## 90 — Dependency injection with `Depends()`
+
+`Depends()` tells FastAPI to call a function and inject its result as a parameter. Used for shared logic like session management and authentication:
+
+```python
+from fastapi import Depends
+
+def get_db_session():
+    session = SessionLocal()
+    try:
+        yield session
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+@router.get("/foods")
+def get_foods(session: Session = Depends(get_db_session)):
+    #                             ↑ FastAPI calls get_db_session() and injects result
+    return FoodRepository(session).get_all()
+```
+
+Dependencies can depend on other dependencies — FastAPI resolves the chain automatically. Write logic once, inject everywhere.
+
+Unused dependencies (gate-only) use underscore prefix:
+```python
+def create_food(_user: UserModel = Depends(get_current_user), ...):
+    # _user just validates the token — value not needed in function body
+```
+
+---
+
+## 91 — JWT authentication
+
+JWT (JSON Web Token) is stateless authentication — the server never stores session state.
+
+**Flow:**
+```
+1. user logs in → server creates signed token containing user_id
+2. server returns token to client
+3. client sends token in every request header: Authorization: Bearer <token>
+4. server validates signature → knows who the user is
+```
+
+**Token structure — three parts separated by dots:**
+```
+header.payload.signature
+eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiI0MiJ9.abc123
+```
+
+- Header — algorithm used (`HS256`)
+- Payload — your data (`{"sub": "42", "exp": 1234567890}`) — base64 encoded, NOT encrypted
+- Signature — `HMAC(header + payload, SECRET_KEY)` — proves it wasn't tampered with
+
+**Why stateless scales better:**
+- Traditional sessions store state on the server — all servers must share session state (Redis)
+- JWT is self-validating — any server recomputes the signature using `SECRET_KEY` and verifies it matches
+- No shared state needed — add servers freely without coordination
+
+**Security:** only the server knows `SECRET_KEY`. Client carries the token but can't forge it without the key. Never put sensitive data in the payload — it's readable by anyone (base64, not encrypted).
+
+```python
+from jose import jwt
+from passlib.context import CryptContext
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+def hash_password(password: str) -> str:
+    return pwd_context.hash(password)
+
+def verify_password(plain: str, hashed: str) -> bool:
+    return pwd_context.verify(plain, hashed)
+
+def create_access_token(user_id: int) -> str:
+    expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    payload = {"sub": str(user_id), "exp": expire}
+    return jwt.encode(payload, SECRET_KEY, algorithm="HS256")
+    # jwt.encode() builds header automatically, computes HMAC signature
+```
+
+Use `datetime.now(timezone.utc)` not deprecated `datetime.utcnow()`.
+
+---
+
+## 92 — `get_current_user()` dependency
+
+Validates JWT and returns the authenticated user. Injected into any protected endpoint:
+
+```python
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+
+security = HTTPBearer()
+
+def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    session: Session = Depends(get_db_session),
+) -> UserModel:
+    token = credentials.credentials   # extract raw token string
+    user_id = decode_access_token(token)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    user = session.get(UserModel, user_id)
+    if not user or not user.is_active:
+        raise HTTPException(status_code=401, detail="User not found or inactive")
+    return user
+```
+
+`HTTPBearer` reads `Authorization: Bearer <token>` header automatically. `credentials.credentials` extracts the raw token string.
+
+---
+
+## 93 — HTTP status codes in FastAPI
+
+```python
+from fastapi import status
+
+@router.post("/", status_code=status.HTTP_201_CREATED)   # 201 for creates
+@router.get("/")                                          # 200 default for reads
+```
+
+Using `status.HTTP_201_CREATED` instead of `201` is more readable and avoids magic numbers. Common ones:
+
+```
+HTTP_200_OK
+HTTP_201_CREATED
+HTTP_400_BAD_REQUEST
+HTTP_401_UNAUTHORIZED
+HTTP_403_FORBIDDEN
+HTTP_404_NOT_FOUND
+HTTP_422_UNPROCESSABLE_ENTITY
+HTTP_500_INTERNAL_SERVER_ERROR
+HTTP_503_SERVICE_UNAVAILABLE
+```
+
+---
+
+## 94 — `response_model` vs return type hint
+
+```python
+@router.get("/foods", response_model=list[FoodResponse])
+def get_foods(...) -> list[FoodResponse]:
+```
+
+Both look similar but serve different purposes:
+
+- `-> list[FoodResponse]` — tells mypy and IDE the return type (static analysis)
+- `response_model=list[FoodResponse]` — tells FastAPI to validate and serialize the response, and shows the correct schema in `/docs`
+
+Without `response_model` — FastAPI doesn't validate the output and `/docs` shows no response schema. Always include both.
+
+---
+
+## 95 — Global exception handlers
+
+Register once on the `app` object — catches exceptions from any endpoint automatically:
+
+```python
+from fastapi import Request
+from fastapi.responses import JSONResponse
+
+@app.exception_handler(FoodNotFoundError)
+async def food_not_found_handler(request: Request, exc: FoodNotFoundError):
+    return JSONResponse(status_code=404, content={"detail": str(exc)})
+
+@app.exception_handler(GoalNotSetError)
+async def goal_not_set_handler(request: Request, exc: GoalNotSetError):
+    return JSONResponse(status_code=404, content={"detail": str(exc)})
+
+@app.exception_handler(InvalidMacroError)
+async def invalid_macro_handler(request: Request, exc: InvalidMacroError):
+    return JSONResponse(status_code=422, content={"detail": str(exc)})
+
+@app.exception_handler(AIServiceError)
+async def ai_service_handler(request: Request, exc: AIServiceError):
+    return JSONResponse(status_code=503, content={"detail": str(exc)})
+```
+
+**Each handler must have a unique function name** — Python overwrites duplicate names, leaving only the last one active.
+
+Without global handlers — every endpoint needs try/except. With them — endpoints are clean, exceptions propagate naturally:
+
+```python
+# clean endpoint — no try/except needed
+@router.get("/{food_id}")
+def get_food(food_id: int, session = Depends(get_db_session)):
+    food = FoodRepository(session).get_by_id(food_id)   # raises FoodNotFoundError
+    return FoodResponse.model_validate(food)             # global handler catches it → 404
+```
+
+---
+
+## 96 — Middleware
+
+Middleware wraps every request and response — runs before the endpoint and after it returns:
+
+```
+request → middleware (before) → endpoint → middleware (after) → response
+```
+
+Use for cross-cutting concerns: logging, CORS, rate limiting, compression.
+
+```python
+import time
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
+from starlette.requests import Request as StarletteRequest
+
+class RequestLoggingMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: StarletteRequest, call_next: RequestResponseEndpoint):
+        start = time.perf_counter()
+        response = await call_next(request)   # passes request to next layer/endpoint
+        duration = time.perf_counter() - start
+        logger.info(f"{request.method} {request.url.path} → {response.status_code} ({duration:.3f}s)")
+        return response
+
+app.add_middleware(RequestLoggingMiddleware)
+```
+
+`call_next` — injects by Starlette, passes the request to the next middleware or endpoint. Without it, the request never reaches the endpoint. Must be `await`ed since it's async.
+
+`BaseHTTPMiddleware` requires overriding exactly one method — `dispatch` — with `(self, request, call_next)` signature. Any other methods are regular class methods.
+
+---
+
+## 97 — CORS middleware
+
+CORS (Cross-Origin Resource Sharing) is a browser security mechanism that blocks requests from a different domain. When React on `localhost:3000` calls FastAPI on `localhost:8000`, the browser sees different origins and blocks it.
+
+CORS middleware adds headers to every response telling the browser which origins are allowed:
+
+```python
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],        # allow all origins (development)
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+```
+
+In production, restrict to the frontend's domain:
+```python
+allow_origins=["https://nutritrack.yourdomain.com"]
+```
+
+CORS is browser-only — it doesn't affect Postman, curl, or Python requests.
+
+---
+
+## 98 — Starlette
+
+FastAPI is built on top of Starlette. Starlette handles the core HTTP mechanics — routing, requests, responses, middleware, WebSockets.
+
+```
+Your code
+    ↓
+FastAPI        ← Pydantic validation, dependency injection, auto docs
+    ↓
+Starlette      ← HTTP handling, routing, middleware, requests, responses
+    ↓
+Uvicorn        ← server that listens for connections
+```
+
+When you use `Request`, `JSONResponse`, or `BaseHTTPMiddleware` — those come from Starlette. FastAPI re-exports most of them, but for middleware `BaseHTTPMiddleware` is imported directly from Starlette.
+
+---
+
+## 99 — pydantic-settings — centralized config
+
+`pydantic-settings` reads environment variables and `.env` files, validates and types them:
+
+```python
+from pydantic_settings import BaseSettings
+from functools import lru_cache
+
+class Settings(BaseSettings):
+    database_url: str = ""             # reads DATABASE_URL from .env
+    secret_key: str = "changeme"       # reads SECRET_KEY from .env
+    access_token_expire_minutes: int = 60 * 24
+    environment: str = "development"
+
+    model_config = {"env_file": ".env"}
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()
+```
+
+`@lru_cache` — caches the `Settings` instance so `.env` is only read once at startup, not on every call. Fields with no default are required — app raises `SettingsError` immediately at startup if missing (fail fast). Fields with defaults are optional.
+
+`database_url: str = ""` — empty string satisfies mypy (which can't see `.env`) while the real value comes from the environment at runtime.
+
+---
+
+## 100 — ORM to dataclass conversion
+
+SQLAlchemy ORM objects need to be converted to Phase 1 dataclasses for computation (e.g. `MacroAggregator`). Use SQLAlchemy relationships to access related data:
+
+```python
+def orm_to_food_entry(entry: FoodEntryModel) -> FoodEntry:
+    food = Food(
+        name=entry.food.name,              # entry.food uses SQLAlchemy relationship
+        protein_per_100g=entry.food.protein_per_100g,
+        carbs_per_100g=entry.food.carbs_per_100g,
+        fat_per_100g=entry.food.fat_per_100g,
+        fiber_per_100g=entry.food.fiber_per_100g,
+        source=entry.food.source,
+    )
+    return FoodEntry(
+        food=food,
+        weight_g=entry.weight_g,
+        logged_date=entry.logged_date,
+        meal_slot=entry.meal_slot,
+    )
+```
+
+`entry.food` — SQLAlchemy automatically loads the related `FoodModel` when accessed. No extra query needed.
+
+Skip `FoodEntryResponse` as an intermediate step — convert directly from ORM to dataclass. Response schemas are only for API output, not for internal data transformation.
+
+---
+
+## 101 — Read operations vs write operations — auth requirements
+
+Standard REST security pattern:
+
+```
+GET    → public (reading data, no harm if unauthenticated)
+POST   → auth required (creates a record)
+PUT    → auth required (updates a record)
+DELETE → auth required (deletes a record)
+```
+
+`user_id` never comes from the request body — it comes from the JWT token via `get_current_user()`. This prevents a user from logging food for another user.
+
+---
+
+## 102 — `FoodNotFoundError` in endpoint vs repository
+
+The repository raises a Python exception. The endpoint maps it to an HTTP response. Two separate layers:
+
+```
+repository raises FoodNotFoundError   ← Python layer
+    ↓
+global exception handler catches it
+    ↓
+returns HTTP 404 to client            ← HTTP layer
+```
+
+Without the handler — FastAPI returns 500. With it — client receives meaningful 404. The repository's job is raising the right exception. The endpoint/handler's job is translating it to HTTP.
+
+---
+
+## 103 — async/await and the event loop
+
+`async def` marks a function as a coroutine — it can pause at `await` and let other code run while waiting.
+
+```python
+# sync — blocks everything while waiting
+def get_food():
+    food = database.query(...)   # blocks 30ms — nothing else runs
+    return food
+
+# async — pauses and lets other requests run while waiting
+async def get_food():
+    food = await database.query(...)   # pauses 30ms — other requests run
+    return food
+```
+
+**The event loop** is a single loop that manages all async operations:
+```
+event loop:
+    check: any tasks ready to resume?
+    yes → resume task, run until next await
+    no  → wait for I/O to complete
+    repeat forever
+```
+
+Like a restaurant manager moving between tables during waiting periods — not doing multiple things simultaneously, but making progress on all of them during waits.
+
+**Concurrency vs parallelism:**
+```
+Concurrency  — one worker switching between tasks during waits (async/await)
+Parallelism  — multiple workers truly doing things simultaneously (threading/multiprocessing)
+```
+
+Async gives concurrency — enough for most web servers where most time is waiting for I/O.
+
+---
+
+## 104 — When to use `async def` vs `def` in FastAPI
+
+```
+sync library (SQLAlchemy, psycopg2)  → use def
+async library (httpx, aiohttp)       → use async def
+middleware                           → always async def (Starlette requires it)
+exception handlers                   → always async def (FastAPI requires it)
+utility functions (pure computation) → def
+```
+
+FastAPI runs `def` endpoints in a thread pool — they don't block the event loop. Using `async def` with synchronous SQLAlchemy would actually block the event loop — worse performance.
+
+The rule: **a function should be `async def` if it needs to `await` something inside it.**
+
+```python
+# needs async def — calls await
+async def get_macros_from_ai(food_name: str):
+    async with httpx.AsyncClient() as client:
+        response = await client.post(...)
+    return response.json()
+
+# plain def — no await needed
+def get_food(session: Session):
+    return session.query(FoodModel).all()
+```
+
+---
+
+## 105 — Concurrency and web servers
+
+Concurrency — dealing with multiple requests at the same time without doing them strictly sequentially.
+
+**Without async (sync thread pool):**
+```
+FastAPI default thread pool: ~40 threads
+1000 concurrent requests → 40 handled, 960 queue up
+response times grow as queue grows
+```
+
+**With async (event loop):**
+```
+1000 concurrent requests → all start immediately
+each pauses at await, letting others progress
+total time ≈ time for one request
+```
+
+**Real NutriTrack example — dashboard load (3 simultaneous requests):**
+```
+sync:   request 1 (30ms) + request 2 (30ms) + request 3 (30ms) = 90ms
+async:  all 3 start simultaneously, all pause at DB query, all respond = ~30ms
+```
+
+**Where async matters most in NutriTrack — AI calls (Phase 4):**
+```
+sync:  40 threads tied up for 800ms AI call = 40 AI requests max in flight
+async: 1000 AI requests in flight, event loop serves other users during 800ms wait
+```
+
+While one user waits 800ms for the AI, all other users get instant responses.
+
+---
+
+## 106 — NutriTrack Phase 3 file structure
+
+```
+nutritrack/
+└── nutritrack/
+    └── api/
+        ├── __init__.py
+        ├── main.py           ← app, routers, CORS, lifespan, exception handlers, middleware
+        ├── dependencies.py   ← get_db_session(), get_current_user()
+        ├── auth_utils.py     ← JWT creation/validation, bcrypt password hashing
+        ├── settings.py       ← pydantic-settings config class
+        └── routers/
+            ├── __init__.py
+            ├── auth.py       ← POST /auth/register, POST /auth/login
+            ├── foods.py      ← GET /foods, GET /foods/{id}, POST /foods
+            ├── logs.py       ← POST /log, GET /log/{date}
+            ├── goals.py      ← POST /goals, GET /goals/active
+            └── summary.py    ← GET /summary/{date} — wires MacroAggregator
+```
+
+Key dependencies used from previous phases:
+- Phase 1: `MacroAggregator`, `Food`, `FoodEntry`, `MacroGoal` dataclasses, `setup_logging()`
+- Phase 2: all repositories, all Pydantic schemas, `get_db_session()`
+
+---
+
 ## Quick mental model
 
 Think of variables as _sticky notes_ attached to objects. Reassigning moves the sticky note to a new object. Mutating changes the object itself — all sticky notes pointing to it see the change.

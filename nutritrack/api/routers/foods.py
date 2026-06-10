@@ -21,12 +21,7 @@ def get_foods(session: Session = Depends(get_db_session)) -> list[FoodResponse]:
 @router.get("/{food_id}", response_model=FoodResponse)
 def get_food(food_id: int, session: Session = Depends(get_db_session)) -> FoodResponse:
     repo = FoodRepository(session)
-    try:
-        food = FoodResponse.model_validate(repo.get_by_id(food_id))
-        return food
-
-    except FoodNotFoundError as err:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(err))
+    return FoodResponse.model_validate(repo.get_by_id(food_id))
 
 
 @router.post("/", response_model=FoodResponse, status_code=status.HTTP_201_CREATED)
