@@ -1,4 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import (
+    OAuth2PasswordRequestForm,
+)  # Expects form data as authentication
 from sqlalchemy.orm import Session
 from nutritrack.api.dependencies import get_db_session
 from nutritrack.api.auth_utils import (
@@ -46,11 +49,17 @@ def register(user_data: UserCreate, session: Session = Depends(get_db_session)):
 
 
 @router.post("/login", response_model=TokenResponse)
-def login(user_credentials: LoginRequest, session: Session = Depends(get_db_session)):
+def login(
+    user_credentials: LoginRequest, session: Session = Depends(get_db_session)
+):  # Used for OAuth2PasswordBearer which expects JSON
+    # def login(user_credentials: OAuth2PasswordRequestForm = Depends(), session: Session = Depends(get_db_session)): # Used for OAuth2PasswordRequestForm which expects form data
     repo = UserRepository(session)
 
     # check if email already exists
-    existing = repo.get_by_email(user_credentials.email)
+    existing = repo.get_by_email(
+        user_credentials.email
+    )  # Used for OAuth2PasswordBearer
+    # existing = repo.get_by_email(user_credentials.username) # Used for OAuth2PasswordRequestForm
     if not existing:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
