@@ -12,6 +12,7 @@ class UserModel(Base):
     email: Mapped[str] = mapped_column(
         String(255), unique=True, nullable=False, index=True
     )
+    hashed_password: Mapped[str] = mapped_column(String(72), nullable=False)
     weight_kg: Mapped[float] = mapped_column(Float, nullable=False)
     height_cm: Mapped[float] = mapped_column(Float, nullable=False)
     age: Mapped[int] = mapped_column(Integer, nullable=False)

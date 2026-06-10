@@ -32,9 +32,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(auth.router,  prefix="/auth",  tags=["auth"])
+app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(foods.router, prefix="/foods", tags=["foods"])
-app.include_router(logs.router,  prefix="/log",   tags=["logs"])
+app.include_router(logs.router, prefix="/log", tags=["logs"])
 app.include_router(goals.router, prefix="/goals", tags=["goals"])
 
 

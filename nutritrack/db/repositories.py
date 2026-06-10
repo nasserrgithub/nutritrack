@@ -60,6 +60,7 @@ class UserRepository:
     def create(
         self,
         email: str,
+        hashed_password: str,
         weight_kg: float,
         height_cm: float,
         age: int,
@@ -69,6 +70,7 @@ class UserRepository:
     ) -> UserModel:
         user = UserModel(
             email=email,
+            hashed_password=hashed_password,
             weight_kg=weight_kg,
             height_cm=height_cm,
             age=age,

@@ -39,6 +39,7 @@ class FoodResponse(BaseModel):
 
 class UserCreate(BaseModel):
     email: str = Field(..., min_length=1, max_length=255)
+    password: str = Field(..., min_length=8, max_length=72)
     weight_kg: float = Field(..., ge=0)
     height_cm: float = Field(..., ge=0)
     age: int = Field(..., ge=1, le=120)
@@ -84,3 +85,13 @@ class FoodEntryResponse(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class LoginRequest(BaseModel):
+    email: str = Field(..., min_length=1, max_length=255)
+    password: str = Field(..., min_length=8, max_length=255)
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
