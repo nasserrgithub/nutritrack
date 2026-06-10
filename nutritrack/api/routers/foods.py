@@ -32,7 +32,9 @@ def get_food(food_id: int, session: Session = Depends(get_db_session)) -> FoodRe
 @router.post("/", response_model=FoodResponse, status_code=status.HTTP_201_CREATED)
 def create_food(
     food_data: FoodCreate,
-    user: UserModel = Depends(get_current_user),
+    _user: UserModel = Depends(
+        get_current_user
+    ),  # gate only - not used, check first before setting up db session
     session: Session = Depends(get_db_session),
 ) -> FoodResponse:
     repo = FoodRepository(session)
