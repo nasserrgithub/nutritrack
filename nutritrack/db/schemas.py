@@ -129,3 +129,9 @@ class DailySummaryResponse(BaseModel):
     remaining_protein: float
     remaining_carbs: float
     remaining_fat: float
+
+
+class NaturalMealLog(BaseModel):
+    text: str = Field(..., min_length=1, max_length=255)
+    meal_slot: str = Field(default="unspecified")
+    logged_date: date = Field(default_factory=date.today)
