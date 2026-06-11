@@ -135,3 +135,9 @@ class NaturalMealLog(BaseModel):
     text: str = Field(..., min_length=1, max_length=255)
     meal_slot: str = Field(default="unspecified")
     logged_date: date = Field(default_factory=date.today)
+
+
+class SuggestionResponse(BaseModel):
+    food_name: str
+    weight_g: float
+    reason: str

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends
 from datetime import date
 from sqlalchemy.orm import Session
 
@@ -8,7 +8,6 @@ from nutritrack.db.repositories import FoodEntryRepository, MacroGoalRepository
 from nutritrack.api.dependencies import get_current_user, get_db_session
 from nutritrack.core.models import FoodEntry, Food, MacroGoal
 from nutritrack.core.parsers import MacroAggregator
-from nutritrack.core.exceptions import GoalNotSetError
 from nutritrack.core.logger import get_logger
 
 logger = get_logger(__name__)

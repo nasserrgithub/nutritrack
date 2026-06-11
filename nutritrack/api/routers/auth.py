@@ -1,7 +1,4 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import (
-    OAuth2PasswordRequestForm,
-)  # Expects form data as authentication
 from sqlalchemy.orm import Session
 from nutritrack.api.dependencies import get_db_session
 from nutritrack.api.auth_utils import (

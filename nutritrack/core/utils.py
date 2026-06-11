@@ -4,10 +4,7 @@ import threading
 from functools import wraps
 from typing import Optional, Callable, Any
 from nutritrack.core.exceptions import (
-    FoodNotFoundError,
     InvalidMacroError,
-    GoalNotSetError,
-    AIServiceError,
 )
 from nutritrack.core.logger import get_logger
 

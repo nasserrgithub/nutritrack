@@ -1,11 +1,10 @@
 from datetime import date
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 from nutritrack.api.dependencies import get_db_session, get_current_user
 from nutritrack.db.repositories import MacroGoalRepository
 from nutritrack.db.schemas import MacroGoalCreate, MacroGoalResponse
 from nutritrack.db.models import UserModel
-from nutritrack.core.exceptions import GoalNotSetError
 from nutritrack.core.logger import get_logger
 
 logger = get_logger(__name__)

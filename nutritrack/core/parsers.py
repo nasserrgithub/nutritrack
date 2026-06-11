@@ -77,7 +77,6 @@ class MacroAggregator:
 
         # Increment macros per day intake
         for daily_total in daily_totals:
-
             # Store latest entry as this will be the basis for computation of remaining macros for the day
             if is_first:
                 self.latest_food_entry = daily_total

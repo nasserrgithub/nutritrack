@@ -14,7 +14,6 @@ logger = get_logger(__name__)
 
 
 class FoodRepository:
-
     def __init__(self, session: Session) -> None:
         self.session = session
 
@@ -58,7 +57,6 @@ class FoodRepository:
 
 
 class UserRepository:
-
     def __init__(self, session: Session) -> None:
         self.session = session
 
@@ -111,7 +109,6 @@ class UserRepository:
 
 
 class FoodEntryRepository:
-
     def __init__(self, session: Session) -> None:
         self.session = session
 

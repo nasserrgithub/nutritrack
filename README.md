@@ -2931,6 +2931,595 @@ Key dependencies used from previous phases:
 
 ---
 
+## 107 — Prompt engineering — getting structured output from AI
+
+The quality of the AI's response depends entirely on how well you write the prompt. For structured data, you must be explicit — tell the AI exactly what format to return and what not to include.
+
+**Bad prompt:**
+```
+"What are the macros for chicken adobo?"
+→ AI returns: "Chicken adobo is a Filipino dish. Per 100g it contains approximately 18-20g of protein..."
+```
+Unparseable — too much text, ranges instead of numbers, no structure.
+
+**Good prompt:**
+```
+"You are a nutrition database. Return ONLY raw JSON with no markdown, no code fences, no backticks, no explanation.
+The response must start with { and end with }.
+Return macros per 100g for: chicken adobo
+Required format: {"protein_per_100g": <float>, ...}
+If the food is unknown, return: {"error": "unknown_food"}"
+```
+Returns clean, parseable JSON every time.
+
+Key principles:
+- Be explicit about format — show the exact JSON structure
+- Say what NOT to do — "no markdown, no code fences, no explanation"
+- Handle edge cases — tell the AI what to return for unknown inputs
+- Use `f-strings` with `{{}}` for literal braces inside f-strings
+
+---
+
+## 108 — Markdown fence stripping
+
+Even with explicit "no markdown" instructions, some AI models wrap responses in code fences:
+
+```
+```json
+{"protein_per_100g": 18.5, ...}
+```
+```
+
+Strip defensively — extract it into a helper:
+
+```python
+def _strip_markdown_fences(text: str) -> str:
+    text = text.strip()
+    if text.startswith("```"):
+        text = text.split("```")[1]
+        if text.startswith("json"):
+            text = text[4:]
+        text = text.strip()
+    return text
+```
+
+Call before `json.loads()` in every AI client function. If the AI returns clean JSON, the function is a no-op. If it wraps in fences, it strips them.
+
+---
+
+## 109 — Anthropic async client
+
+```python
+import anthropic
+from anthropic.types import TextBlock
+
+client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+
+response = await client.messages.create(
+    model="claude-sonnet-4-5",
+    max_tokens=256,
+    messages=[{"role": "user", "content": prompt}],
+)
+
+block = response.content[0]
+if not isinstance(block, TextBlock):
+    raise AIServiceError(f"Unexpected response block type: {type(block)}")
+text = block.text
+```
+
+`response.content[0]` can be many block types (`TextBlock`, `ToolUseBlock`, etc.) — mypy requires an `isinstance` check before accessing `.text`. Without the check, mypy raises a union-attr error.
+
+`await` applies only to the coroutine — chain attribute access after:
+```python
+# ❌ wrong — can't chain after await
+response = await client.messages.create(...).content[0].text
+
+# ✅ correct — await the coroutine, then access attributes
+response = await client.messages.create(...)
+text = response.content[0].text
+```
+
+---
+
+## 110 — `max_tokens` in AI API calls
+
+`max_tokens` limits the length of the AI's response in tokens (roughly 1 token per word). If the response would exceed this limit, it gets cut off mid-response.
+
+```python
+max_tokens=256    # ~200 words — fine for a single JSON object
+max_tokens=1024   # ~800 words — needed for lists with reason strings
+```
+
+Choose based on expected response size:
+- Single JSON object (macro lookup) → 256 is enough
+- JSON array with descriptions (suggestions, natural language) → use 1024+
+
+---
+
+## 111 — DB-first AI caching strategy
+
+AI calls are expensive — avoid calling the API for the same food multiple times. Check the database first:
+
+```python
+food = food_repo.get_by_name(food_entry.food_name)
+
+if not food:
+    # only call AI if not in DB
+    macros = await lookup_food_macros(food_entry.food_name)
+    food = food_repo.create(
+        name=food_entry.food_name,
+        source="ai_lookup",
+        **macros
+    )
+# food is now in DB — next lookup finds it without AI call
+```
+
+Result: AI called exactly once per unique food name ever. The `source="ai_lookup"` field tracks which foods came from AI vs CSV vs manual entry.
+
+---
+
+## 112 — Natural language meal parsing
+
+One AI call can extract multiple foods from free text, estimate weights, and return macros — all at once:
+
+```
+Input: "I had oatmeal with banana and two eggs for breakfast"
+Output: [
+    {"food_name": "oatmeal", "weight_g": 80, "protein_per_100g": 17.0, ...},
+    {"food_name": "banana", "weight_g": 118, "protein_per_100g": 1.1, ...},
+    {"food_name": "whole egg", "weight_g": 120, "protein_per_100g": 13.0, ...}
+]
+```
+
+One API call instead of three — cheaper and faster. The endpoint then loops through results, checks DB for each food, creates if missing, and creates a `FoodEntry` per food.
+
+---
+
+## 113 — `asyncio.run()` — running async code from sync context
+
+In a synchronous context (shell, script, test), use `asyncio.run()` to run a coroutine:
+
+```python
+import asyncio
+
+# can't call async function directly from sync code
+result = lookup_food_macros("chicken breast")   # ❌ returns coroutine, not result
+
+# asyncio.run() creates event loop, runs coroutine, returns result
+result = asyncio.run(lookup_food_macros("chicken breast"))   # ✅
+```
+
+For testing async functions — write a `tester.py` script at project root rather than using the interactive shell (Git Bash doesn't support arrow key history in Python shell).
+
+---
+
+## 114 — Error handling in AI clients — exception ordering
+
+When catching exceptions in AI client functions, always re-raise known exceptions before the catch-all:
+
+```python
+try:
+    ...
+    raise FoodNotFoundError(food_name)   # known exception
+    ...
+except FoodNotFoundError:
+    raise                                # re-raise as-is — don't wrap it
+except Exception as exc:
+    raise AIServiceError(str(exc))       # wrap unknown exceptions
+```
+
+Without the specific `except FoodNotFoundError` — it gets caught by `except Exception` and wrapped as `AIServiceError`, losing the original exception type. The global exception handler maps `FoodNotFoundError` → 404 and `AIServiceError` → 503 — so the distinction matters.
+
+---
+
+## 115 — AI suggestions — context-aware prompts
+
+For suggestions, the prompt must include the user's current state as context. The AI reads remaining macros and goal totals, then suggests specific foods with portions and reasons:
+
+```python
+def daily_suggestions_prompt(remaining: dict, goal: dict) -> str:
+    return f"""You are a nutrition database. Return ONLY raw JSON...
+    
+The remaining macros are {remaining} and the goal is {goal}.
+Give 3-5 food suggestions that help hit the remaining macros.
+Each suggestion: {{"food_name": ..., "weight_g": ..., "reason": ...}}
+Return as a JSON array.""".strip()
+```
+
+The AI uses `remaining` to understand the gap and suggests foods specifically targeting that gap — not generic recommendations.
+
+---
+
+## 116 — `model_validate()` with plain dicts
+
+`model_validate()` works with both SQLAlchemy objects and plain dicts:
+
+```python
+# from dict (AI response)
+suggestion = SuggestionResponse.model_validate({
+    "food_name": "chicken breast",
+    "weight_g": 150,
+    "reason": "High protein"
+})
+
+# from SQLAlchemy object (needs from_attributes: True)
+response = FoodResponse.model_validate(food_orm_object)
+```
+
+Response schemas that only receive dicts (like `SuggestionResponse`) don't need `model_config = {"from_attributes": True}` — that's only needed when reading from ORM objects.
+
+---
+
+## 117 — Path parameters in FastAPI — no defaults allowed
+
+Path parameters are part of the URL — they are always required. You cannot give them default values:
+
+```python
+# ❌ wrong — path parameters can't have defaults
+@router.get("/{summary_date}/suggestions")
+async def get_suggestions(summary_date: date = date.today()):
+
+# ✅ correct — required path parameter
+@router.get("/{summary_date}/suggestions")
+async def get_suggestions(summary_date: date):
+```
+
+If you want an optional date that defaults to today, use a **query parameter** instead:
+
+```python
+@router.get("/suggestions")
+async def get_suggestions(summary_date: date = Query(default_factory=date.today)):
+```
+
+Query parameters appear after `?` in the URL: `/suggestions?summary_date=2026-06-11`
+
+---
+
+## 118 — JWT token expiry and re-authentication
+
+Tokens expire after the configured duration (`ACCESS_TOKEN_EXPIRE_MINUTES`). When expired:
+- `decode_access_token()` returns `None` (the `JWTError` catches expiry)
+- `get_current_user()` raises `HTTP 401 Unauthorized`
+- Client must call `POST /auth/login` again to get a fresh token
+
+Two common patterns:
+
+```
+Pattern 1 — Single token (NutriTrack):
+access_token expires in 24h → user logs in again
+Simple but worse UX for long sessions
+
+Pattern 2 — Refresh tokens:
+access_token expires in 15min
+refresh_token expires in 30 days
+client silently refreshes access_token using refresh_token
+Better UX — user never sees login screen
+```
+
+NutriTrack uses Pattern 1 — 24 hours is reasonable for a daily tracking app.
+
+---
+
+## 119 — NutriTrack Phase 4 file structure
+
+```
+nutritrack/
+└── nutritrack/
+    └── ai/
+        ├── __init__.py
+        ├── client.py      ← async Anthropic API calls with fence stripping and error handling
+        └── prompts.py     ← prompt template functions
+```
+
+New endpoints added to Phase 3 routers:
+```
+POST /log              ← updated: AI fallback when food not in DB
+POST /log/natural      ← new: natural language meal logging
+GET  /summary/{date}/suggestions  ← new: AI food suggestions
+```
+
+New schemas added to `schemas.py`:
+```
+NaturalMealLog         ← text, meal_slot, logged_date
+SuggestionResponse     ← food_name, weight_g, reason
+```
+
+---
+
+## 120 — Triple-quoted strings and f-strings for prompts
+
+Triple-quoted strings preserve newlines and indentation — ideal for prompts:
+
+```python
+prompt = f"""
+Return ONLY a JSON object for: {food_name}
+No markdown, no explanation.
+Format: {{"protein_per_100g": <float>}}
+""".strip()
+```
+
+Inside f-strings, `{{` and `}}` are literal curly braces (not format placeholders). `.strip()` removes leading/trailing whitespace from the triple-quoted string.
+
+Three ways to write multiline strings:
+```python
+# triple quotes — preserves newlines
+prompt = """line one
+line two"""
+
+# implicit concatenation — no newlines
+prompt = ("line one "
+          "line two")
+
+# backslash continuation — no newlines
+prompt = "line one " \
+         "line two"
+```
+
+Use triple quotes for prompts — the structure is readable in code exactly as the AI sees it.
+
+---
+
+## 121 — Why `field(default_factory=date.today)` and not `date.today()` — deeper explanation
+
+Three options and what actually happens at class definition time:
+
+```python
+# option 1 — calls date.today() ONCE when Python loads the class
+logged_date: date = date.today()
+# Result: every instance ever created shares the same hardcoded date
+
+# option 2 — stores the function object as the value, never calls it
+logged_date: date = date.today
+# Result: logged_date becomes the function itself, not a date
+
+# option 3 — correct: stores the function, calls it fresh on each instantiation
+logged_date: date = field(default_factory=date.today)
+# Result: date.today() called fresh every time a new instance is created
+```
+
+`default_factory` is the instruction to CALL the function — not just hold it. Same rule applies to mutable defaults like lists — never `tags: list = []`, always `tags: list = field(default_factory=list)`.
+
+---
+
+## 122 — How Python decides if a variable is local — compile-time scoping
+
+Python decides a variable's scope for the **entire function** at compile time based on whether any assignment to that name exists anywhere in the function body:
+
+```python
+x = 10
+
+def foo():
+    print(x)   # UnboundLocalError — even though x=10 exists outside!
+    x = 20     # this assignment makes Python treat x as local EVERYWHERE in foo
+```
+
+Python sees `x =` on line 2 and marks `x` as local for the entire function — including line 1. At runtime, line 1 tries to read `x` from local scope, finds nothing, and raises `UnboundLocalError`.
+
+Without the assignment:
+```python
+def foo():
+    print(x)   # works fine — no assignment, so Python looks in enclosing/global scope
+```
+
+This is why the list trick works for closures — `last_called[0] = value` mutates the list contents without reassigning `last_called` itself, so Python never marks it as local.
+
+---
+
+## 123 — Why `validate_macros` decorator checks `endswith("_g")` not `endswith("_per_100g")`
+
+A subtle gotcha tested in practice:
+
+```python
+"protein_per_100g".endswith("_g")     # False — ends with "0g" not "_g"
+"protein_per_100g".endswith("_per_100g")  # True
+"protein_g".endswith("_g")            # True
+```
+
+The string `"protein_per_100g"` ends with `"0g"` — the last two characters are `0` and `g`, not `_` and `g`. So `endswith("_g")` does NOT catch `_per_100g` fields.
+
+The correct check needs both conditions:
+```python
+if macro_type.endswith("_g") or macro_type.endswith("_per_100g"):
+```
+
+Always verify string operations in the Python shell before assuming — `"protein_per_100g".endswith("_g")` returning `False` is counterintuitive but correct.
+
+---
+
+## 124 — `current_delay = delay` must be outside the retry loop
+
+A common bug — placing `current_delay = delay` inside the loop resets it on every iteration, defeating exponential backoff:
+
+```python
+# ❌ wrong — resets every iteration
+while attempts < times:
+    try:
+        ...
+    except Exception:
+        current_delay = delay       # reset to original every time
+        time.sleep(current_delay)
+        current_delay *= backoff    # multiplied but immediately reset next iteration
+
+# ✅ correct — initialized once, grows across iterations
+current_delay = delay               # outside the loop
+while attempts < times:
+    try:
+        ...
+    except Exception:
+        time.sleep(current_delay)
+        current_delay *= backoff    # grows: 1 → 2 → 4 → 8
+        attempts += 1
+```
+
+---
+
+## 125 — Why `last_called[0]` updates on every call, not just when sleeping
+
+In `@rate_limit`, the timestamp must update whether or not a sleep occurred:
+
+```python
+with lock:
+    elapsed = time.perf_counter() - last_called[0]
+    if elapsed < interval_s:
+        time.sleep(interval_s - elapsed)
+    last_called[0] = time.perf_counter()   # ← always update, outside the if
+```
+
+If `last_called[0]` only updates inside the `if` (when sleeping), then calls that don't need to sleep never update the timestamp. The next call then calculates elapsed against a stale value and may fire too early.
+
+---
+
+## 126 — `ilike` in SQLAlchemy — case-insensitive search
+
+```python
+session.query(FoodModel).filter(FoodModel.name.ilike(f"%{name}%")).first()
+```
+
+`ilike` — case-insensitive LIKE. Searching "chicken" matches "Chicken Breast", "CHICKEN", "chicken breast". The `%` wildcards match any characters before and after the search term.
+
+Used in `FoodRepository.get_by_name()` so users can type "Chicken" and find "chicken breast" without exact case matching.
+
+---
+
+## 127 — `session.flush()` — get auto-generated ID without committing
+
+```python
+self.session.add(food)
+self.session.flush()   # writes SQL, assigns id, stays in transaction
+logger.info(f"Created food: {food.name} (id={food.id})")  # id is now available
+return food
+```
+
+Without `flush()` — `food.id` is `None` because the database hasn't assigned it yet. With `flush()` — the INSERT runs within the current transaction, the database assigns the ID, and it's available in Python. The transaction can still be rolled back — `flush()` is not permanent.
+
+---
+
+## 128 — Why the function call is OUTSIDE the lock in `@rate_limit`
+
+```python
+with lock:
+    # timing check and timestamp update only — microseconds
+    elapsed = time.perf_counter() - last_called[0]
+    if elapsed < interval_s:
+        time.sleep(interval_s - elapsed)
+    last_called[0] = time.perf_counter()
+# lock released here
+
+return func(*args, **kwargs)   # actual function call — outside lock
+```
+
+If the function call is inside the lock:
+- Thread 1 acquires lock → sleeps 0.5s → calls func (800ms AI call) → lock held for 800ms
+- Thread 2 waits 800ms just to get to the timing check — blocked by func, not rate limiting
+
+The lock's only job is protecting `last_called[0]` from race conditions — a microsecond operation. Holding it during the actual function call blocks all threads for the full function duration unnecessarily.
+
+---
+
+## 129 — Python logging tree — why modules don't need to call `basicConfig()`
+
+Every module creates its own named logger with `getLogger(__name__)`. Messages travel up the logger tree to the root logger which has the output handler:
+
+```
+nutritrack.core.utils logger → nutritrack.core → nutritrack → root logger → stdout
+```
+
+`setup_logging()` configures the root logger once at app startup. All child loggers automatically output correctly — no per-module configuration needed.
+
+In the Python shell, there's no app startup — you must call `setup_logging()` manually each session. This is why shell testing requires it but the running app doesn't.
+
+---
+
+## 130 — `deactivate()` — why `.update()` returns int, not the object
+
+```python
+# ❌ wrong — .update() returns number of rows affected, not the object
+deactivated_user = session.query(UserModel).filter(...).update({...})
+return deactivated_user   # returns 1, not a UserModel
+
+# ✅ correct — fetch first, mutate attribute, flush
+def deactivate(self, user_id: int) -> UserModel:
+    user = self.get_by_id(user_id)   # raises UserNotFoundError if missing
+    user.is_active = False
+    self.session.flush()
+    return user
+```
+
+This approach also reuses `get_by_id()` — no duplicate lookup logic. If the user doesn't exist, `UserNotFoundError` is raised before any update attempt.
+
+---
+
+## 131 — Why `FoodEntryCreate` uses `food_name` not `food_id`
+
+The user never knows or provides `food_id` — that's an internal database concept. They just type a food name. The backend resolves it:
+
+```
+user provides: food_name="chicken adobo", weight_g=200
+    ↓
+backend checks DB for "chicken adobo"
+    ↓
+found? use existing food_id
+not found? call AI → save food → get food_id
+    ↓
+create FoodEntry with resolved food_id
+```
+
+Similarly, `user_id` never comes from the request body — it comes from the JWT token. This prevents a user from logging food for another user's account.
+
+---
+
+## 132 — Swagger UI (`/docs`) for API testing during development
+
+FastAPI auto-generates interactive API documentation at `/docs`. Standard workflow:
+
+1. Start server: `uvicorn nutritrack.api.main:app --reload`
+2. Open `http://127.0.0.1:8000/docs`
+3. Call `POST /auth/login` → copy the `access_token`
+4. Click **Authorize** (top right) → paste token in HTTPBearer field
+5. All protected endpoints now send the token automatically
+6. Use **Try it out** on any endpoint to test with real data
+
+The `/docs` page reads `response_model`, `status_code`, tags, and docstrings from your code — keeping documentation always in sync with the implementation.
+
+---
+
+## 133 — bcrypt version compatibility — passlib and bcrypt
+
+Passlib's bcrypt handler reads `bcrypt.__about__.__version__` which no longer exists in newer bcrypt versions. This causes a `ValueError: password cannot be longer than 72 bytes` error even for short passwords.
+
+Fix — pin bcrypt to a compatible version:
+```bash
+pip install bcrypt==4.0.1
+```
+
+The error message is misleading — the real issue is passlib failing to detect the bcrypt backend version, not actual password length.
+
+---
+
+## 134 — `OAuth2PasswordBearer` vs `HTTPBearer` in FastAPI
+
+`OAuth2PasswordBearer` — designed for OAuth2 password flow. The `/docs` Authorize button shows a username/password form and calls the token URL automatically. But it expects form data (`username`/`password`), not JSON.
+
+`HTTPBearer` — simpler, reads `Authorization: Bearer <token>` header. The `/docs` Authorize button shows a raw token field — paste your JWT directly. Works with JSON login endpoints.
+
+For NutriTrack, `HTTPBearer` is cleaner since the login endpoint accepts JSON. After logging in via `POST /auth/login`, copy the token and paste it in the Authorize dialog.
+
+```python
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+
+security = HTTPBearer()
+
+def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    ...
+) -> UserModel:
+    token = credentials.credentials   # the raw JWT string
+```
+
+The type hint `HTTPAuthorizationCredentials` is required — without it, mypy can't determine the type of `credentials` and `credentials.credentials` fails.
+
+---
+
 ## Quick mental model
 
 Think of variables as _sticky notes_ attached to objects. Reassigning moves the sticky note to a new object. Mutating changes the object itself — all sticky notes pointing to it see the change.

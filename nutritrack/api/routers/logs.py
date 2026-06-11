@@ -2,10 +2,26 @@ from datetime import date
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 from nutritrack.api.dependencies import get_db_session, get_current_user
-from nutritrack.db.repositories import FoodRepository, FoodEntryRepository
-from nutritrack.db.schemas import FoodEntryCreate, FoodEntryResponse, NaturalMealLog
+from nutritrack.db.repositories import (
+    FoodRepository,
+    FoodEntryRepository,
+    MacroGoalRepository,
+)
+from nutritrack.db.schemas import (
+    FoodEntryCreate,
+    FoodEntryResponse,
+    NaturalMealLog,
+    SuggestionResponse,
+)
 from nutritrack.db.models import UserModel
-from nutritrack.ai.client import lookup_food_macros, parse_natural_language_meal
+from nutritrack.ai.client import (
+    lookup_food_macros,
+    parse_natural_language_meal,
+    get_food_suggestions,
+)
+from nutritrack.api.routers.summary import orm_to_food_entry
+from nutritrack.core.parsers import MacroAggregator
+from nutritrack.core.models import MacroGoal
 from nutritrack.core.logger import get_logger
 
 logger = get_logger(__name__)
@@ -99,3 +115,40 @@ async def log_natural_meal(
         )
 
     return food_entry_responses
+
+
+@router.get("/{summary_date}/suggestions", response_model=list[SuggestionResponse])
+async def get_daily_suggestions(
+    summary_date: date,
+    user: UserModel = Depends(get_current_user),
+    session: Session = Depends(get_db_session),
+) -> list[SuggestionResponse]:
+
+    food_entry_repo = FoodEntryRepository(session)
+    food_entries_db = food_entry_repo.get_by_user_and_date(user.id, summary_date)
+    food_entries = [orm_to_food_entry(food_entry) for food_entry in food_entries_db]
+
+    macro_goal_repo = MacroGoalRepository(session)
+    macro_goal_db = macro_goal_repo.get_active(user.id, summary_date)
+    macro_goal = MacroGoal(
+        calories=macro_goal_db.calories,
+        protein_g=macro_goal_db.protein_g,
+        carbs_g=macro_goal_db.carbs_g,
+        fat_g=macro_goal_db.fat_g,
+        effective_date=summary_date,
+    )
+
+    macro_aggregator = MacroAggregator(food_entries=food_entries, macro_goal=macro_goal)
+    remaining = macro_aggregator.remaining_macros()
+
+    foods = await get_food_suggestions(
+        remaining,
+        {
+            "calories": macro_goal.calories,
+            "protein_g": macro_goal.protein_g,
+            "carbs_g": macro_goal.carbs_g,
+            "fat_g": macro_goal.fat_g,
+        },
+    )
+
+    return [SuggestionResponse.model_validate(food) for food in foods]

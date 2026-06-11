@@ -3,11 +3,25 @@ import anthropic
 from anthropic.types import TextBlock
 from nutritrack.api.settings import get_settings
 from nutritrack.core.exceptions import AIServiceError, FoodNotFoundError
-from nutritrack.ai.prompts import food_macro_lookup_prompt, natural_language_meal_prompt
+from nutritrack.ai.prompts import (
+    food_macro_lookup_prompt,
+    natural_language_meal_prompt,
+    daily_suggestions_prompt,
+)
 from nutritrack.core.logger import get_logger
 
 logger = get_logger(__name__)
 settings = get_settings()
+
+
+def _strip_markdown_fences(text: str) -> str:
+    text = text.strip()
+    if text.startswith("```"):
+        text = text.split("```")[1]
+        if text.startswith("json"):
+            text = text[4:]
+        text = text.strip()
+    return text
 
 
 async def lookup_food_macros(food_name: str) -> dict:
@@ -27,7 +41,7 @@ async def lookup_food_macros(food_name: str) -> dict:
         block = response.content[0]
         if not isinstance(block, TextBlock):
             raise AIServiceError(f"Unexpected response block type: {type(block)}")
-        text = block.text
+        text = _strip_markdown_fences(block.text)
         result = json.loads(text)
 
         err_msg = result.get("error")
@@ -38,10 +52,10 @@ async def lookup_food_macros(food_name: str) -> dict:
 
         logger.info(
             f"Done lookup for macros of {food_name}. "
-            f"protein_per_100g: {result.get('protein_per_100g', 0)} "
-            f"carbs_per_100g: {result.get('carbs_per_100g', 0)} "
-            f"fat_per_100g: {result.get('fat_per_100g', 0)} "
-            f"fiber_per_100g: {result.get('fiber_per_100g', 0)} "
+            f"protein_per_100g: {result['protein_per_100g']} "
+            f"carbs_per_100g: {result['carbs_per_100g']} "
+            f"fat_per_100g: {result['fat_per_100g']} "
+            f"fiber_per_100g: {result['fiber_per_100g']} "
         )
         return result
     except FoodNotFoundError:
@@ -63,7 +77,7 @@ async def parse_natural_language_meal(user_input: str) -> list[dict]:
         block = response.content[0]
         if not isinstance(block, TextBlock):
             raise AIServiceError(f"Unexpected response block type: {type(block)}")
-        text = block.text
+        text = _strip_markdown_fences(block.text)
         result = json.loads(text)
 
         if not result:
@@ -72,14 +86,48 @@ async def parse_natural_language_meal(user_input: str) -> list[dict]:
         logger.info(f"Done lookup for macros of user input: {user_input}")
         for food in result:
             logger.info(
-                f"food_name: {food.get('food_name', '')} "
-                f"protein_per_100g: {food.get('protein_per_100g', 0)} "
-                f"carbs_per_100g: {food.get('carbs_per_100g', 0)} "
-                f"fat_per_100g: {food.get('fat_per_100g', 0)} "
-                f"fiber_per_100g: {food.get('fiber_per_100g', 0)} |"
+                f"food_name: {food['food_name']} "
+                f"protein_per_100g: {food['protein_per_100g']} "
+                f"carbs_per_100g: {food['carbs_per_100g']} "
+                f"fat_per_100g: {food['fat_per_100g']} "
+                f"fiber_per_100g: {food['fiber_per_100g']} "
             )
         return result
     except FoodNotFoundError:
+        raise
+    except Exception as exc:
+        raise AIServiceError(str(exc))
+
+
+async def get_food_suggestions(remaining: dict, goal: dict) -> list[dict]:
+    client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+    try:
+        response = await client.messages.create(
+            model="claude-sonnet-4-5",
+            max_tokens=1024,
+            messages=[
+                {"role": "user", "content": daily_suggestions_prompt(remaining, goal)}
+            ],
+        )
+        block = response.content[0]
+        if not isinstance(block, TextBlock):
+            raise AIServiceError(f"Unexpected response block type: {type(block)}")
+        text = _strip_markdown_fences(block.text)
+        result = json.loads(text)
+
+        if not result:
+            raise AIServiceError("No food suggestions/results returned")
+
+        logger.info("Done fetching food suggestions")
+        for food in result:
+            logger.info(
+                f"food_name: {food['food_name']} "
+                f"weight_g: {food['weight_g']} "
+                f"reason: {food['reason']} "
+            )
+
+        return result
+    except AIServiceError:
         raise
     except Exception as exc:
         raise AIServiceError(str(exc))

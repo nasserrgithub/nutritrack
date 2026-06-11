@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
 from nutritrack.core.logger import get_logger
@@ -6,7 +6,6 @@ from nutritrack.db.schemas import FoodResponse, FoodCreate
 from nutritrack.db.repositories import FoodRepository
 from nutritrack.db.models import UserModel
 from nutritrack.api.dependencies import get_db_session, get_current_user
-from nutritrack.core.exceptions import FoodNotFoundError
 
 logger = get_logger(__name__)
 router = APIRouter()
