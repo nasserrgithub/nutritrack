@@ -5,6 +5,7 @@ from nutritrack.api.dependencies import get_db_session, get_current_user
 from nutritrack.db.repositories import FoodRepository, FoodEntryRepository
 from nutritrack.db.schemas import FoodEntryCreate, FoodEntryResponse
 from nutritrack.db.models import UserModel
+from nutritrack.ai.client import lookup_food_macros
 from nutritrack.core.logger import get_logger
 
 logger = get_logger(__name__)
@@ -12,7 +13,7 @@ router = APIRouter()
 
 
 @router.post("/", response_model=FoodEntryResponse, status_code=status.HTTP_201_CREATED)
-def log_food_entry(
+async def log_food_entry(
     food_entry: FoodEntryCreate,
     user: UserModel = Depends(get_current_user),
     session: Session = Depends(get_db_session),
@@ -21,11 +22,15 @@ def log_food_entry(
     food_repo = FoodRepository(session)
     food = food_repo.get_by_name(food_entry.food_name)
 
-    # TODO: AI integration lookup if food was not found
     if not food:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Food not found. Try a different name.",
+        ai_lookup = await lookup_food_macros(food_entry.food_name)
+        food = food_repo.create(
+            name=food_entry.food_name,
+            protein_per_100g=ai_lookup["protein_per_100g"],
+            carbs_per_100g=ai_lookup["carbs_per_100g"],
+            fat_per_100g=ai_lookup["fat_per_100g"],
+            fiber_per_100g=ai_lookup["fiber_per_100g"],
+            source="ai_lookup",
         )
 
     food_entry_repo = FoodEntryRepository(session)
