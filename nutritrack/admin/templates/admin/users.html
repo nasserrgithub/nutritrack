@@ -23,8 +23,11 @@
                 <td>{{ user.is_active }}</td>
                 <td>{{ user.created_at }}</td>
                 <td>
-                    <form method="POST" action="/admin/reports/generate/{{ user.id }}">
+                    <form method="POST" action="/admin/reports/generate/{{ user.id }}" style="display:inline;">
                         <button type="submit">Generate report</button>
+                    </form>
+                    <form method="POST" action="/admin/reports/send-email/{{ user.id }}" style="display:inline;">
+                        <button type="submit">Send email</button>
                     </form>
                 </td>
             </tr>

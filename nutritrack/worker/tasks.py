@@ -1,8 +1,13 @@
 from datetime import date, timedelta
 from nutritrack.worker.celery_app import celery_app
 from nutritrack.db.database import get_session
-from nutritrack.db.repositories import FoodEntryRepository, MacroGoalRepository
+from nutritrack.db.repositories import (
+    FoodEntryRepository,
+    MacroGoalRepository,
+    UserRepository,
+)
 from nutritrack.api.routers.summary import orm_to_food_entry
+from nutritrack.worker.utils import send_email, render_html
 from nutritrack.core.parsers import MacroAggregator
 from nutritrack.core.models import MacroGoal
 from nutritrack.core.logger import get_logger
@@ -56,3 +61,18 @@ def generate_weekly_report(user_id: int) -> dict:
     )
 
     logger.info(f"Summary of the weekly report: {summary}")
+    return summary
+
+
+@celery_app.task
+def send_weekly_report_email(user_id: int) -> dict:
+    summary = generate_weekly_report(user_id)
+
+    with get_session() as session:
+        user_repo = UserRepository(session)
+        user = user_repo.get_by_id(user_id)
+        email = user.email
+
+    html = render_html(summary_data={**summary, "email": email})
+    send_email(to=email, subject="Weekly Macros Summary Report", html_body=html)
+    return {"status": "sent", "user_id": user_id, "email": email}

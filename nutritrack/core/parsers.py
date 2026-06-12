@@ -69,6 +69,7 @@ class MacroAggregator:
         self.total_fat = 0
         self.entry_count = 0
         self.food_counter: Counter[str] = Counter()
+        self.date_counter = 0
         self.latest_food_entry = None
         is_first = True
 
@@ -92,6 +93,9 @@ class MacroAggregator:
             for food in daily_total["foods"]:
                 self.food_counter[food.name] += 1
 
+            # Count number of days
+            self.date_counter += 1
+
     def remaining_macros(self, today_only: bool = True) -> dict:
         if today_only:
             if self.latest_food_entry is None:
@@ -108,10 +112,12 @@ class MacroAggregator:
             }
 
         return {
-            "calories": self.macro_goal.calories - self.total_calories,
-            "protein": self.macro_goal.protein_g - self.total_protein,
-            "carbs": self.macro_goal.carbs_g - self.total_carbs,
-            "fat": self.macro_goal.fat_g - self.total_fat,
+            "calories": self.macro_goal.calories * self.date_counter
+            - self.total_calories,
+            "protein": self.macro_goal.protein_g * self.date_counter
+            - self.total_protein,
+            "carbs": self.macro_goal.carbs_g * self.date_counter - self.total_carbs,
+            "fat": self.macro_goal.fat_g * self.date_counter - self.total_fat,
         }
 
     def top_foods(self, n: int = 5) -> list:

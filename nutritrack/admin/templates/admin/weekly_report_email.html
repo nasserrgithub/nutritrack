@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<body style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+    <h2>NutriTrack — Weekly Report</h2>
+    <p>Hi {{ email }},</p>
+    <p>Here's your nutrition summary for {{ start_date }} to {{ end_date }}:</p>
+
+    <table style="width: 100%; border-collapse: collapse;">
+        <tr style="background: #f5f5f5;">
+            <th style="padding: 8px; text-align: left;">Metric</th>
+            <th style="padding: 8px; text-align: right;">Total</th>
+            <th style="padding: 8px; text-align: right;">Remaining</th>
+        </tr>
+        <tr>
+            <td style="padding: 8px;">Calories</td>
+            <td style="padding: 8px; text-align: right;">{{ total_calories | round(2) }}</td>
+            <td style="padding: 8px; text-align: right;">{{ remaining_calories | round(2) }}</td>
+        </tr>
+        <tr style="background: #f5f5f5;">
+            <td style="padding: 8px;">Protein (g)</td>
+            <td style="padding: 8px; text-align: right;">{{ total_protein | round(2) }}</td>
+            <td style="padding: 8px; text-align: right;">{{ remaining_protein | round(2) }}</td>
+        </tr>
+        <tr>
+            <td style="padding: 8px;">Carbs (g)</td>
+            <td style="padding: 8px; text-align: right;">{{ total_carbs | round(2) }}</td>
+            <td style="padding: 8px; text-align: right;">{{ remaining_carbs | round(2) }}</td>
+        </tr>
+        <tr style="background: #f5f5f5;">
+            <td style="padding: 8px;">Fat (g)</td>
+            <td style="padding: 8px; text-align: right;">{{ total_fat | round(2) }}</td>
+            <td style="padding: 8px; text-align: right;">{{ remaining_fat | round(2) }}</td>
+        </tr>
+    </table>
+
+    <p style="color: #666; font-size: 12px; margin-top: 20px;">
+        Logged {{ entry_count }} food entries this week.
+    </p>
+</body>
+</html>

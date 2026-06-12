@@ -43,3 +43,11 @@ def trigger_report(user_id: int):
 
     task = generate_weekly_report.delay(user_id)
     return render_template("admin/task_status.html", task_id=task.id, user_id=user_id)
+
+
+@bp.route("/reports/send-email/<int:user_id>", methods=["POST"])
+def trigger_email(user_id: int):
+    from nutritrack.worker.tasks import send_weekly_report_email
+
+    task = send_weekly_report_email.delay(user_id)
+    return render_template("admin/task_status.html", task_id=task.id, user_id=user_id)

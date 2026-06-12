@@ -26,7 +26,7 @@ class GoalNotSetError(Exception):
 
     def __init__(self):
         super().__init__(
-            "No macro goal has been set for today. You can't log a food entry yet."
+            "No macro goal has been set for this date. You can't log a food entry yet."
         )
 
 

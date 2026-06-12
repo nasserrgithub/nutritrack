@@ -9,6 +9,9 @@ class Settings(BaseSettings):
     environment: str = "development"
     anthropic_api_key: str = ""
     redis_url: str = "redis://localhost:6379/0"
+    mail_username: str = ""
+    mail_password: str = ""
+    mail_from: str = ""
 
     model_config = {"env_file": ".env"}
 
