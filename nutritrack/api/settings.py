@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 60 * 24
     environment: str = "development"
     anthropic_api_key: str = ""
+    redis_url: str = "redis://localhost:6379/0"
 
     model_config = {"env_file": ".env"}
 

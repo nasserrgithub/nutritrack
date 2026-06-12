@@ -22,6 +22,11 @@
                 <td>{{ user.activity_level }}</td>
                 <td>{{ user.is_active }}</td>
                 <td>{{ user.created_at }}</td>
+                <td>
+                    <form method="POST" action="/admin/reports/generate/{{ user.id }}">
+                        <button type="submit">Generate report</button>
+                    </form>
+                </td>
             </tr>
             {% endfor %}
         </tbody>

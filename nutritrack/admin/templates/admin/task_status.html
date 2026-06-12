@@ -1,0 +1,9 @@
+{% extends "admin/base.html" %}
+
+{% block content %}
+<h2>Report queued</h2>
+<div class="card">
+    <p>Weekly report for user {{ user_id }} has been queued.</p>
+    <p>Task ID: <code>{{ task_id }}</code></p>
+</div>
+{% endblock %}

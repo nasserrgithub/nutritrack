@@ -35,3 +35,11 @@ def users():
             for u in session.query(UserModel).all()
         ]
     return render_template("admin/users.html", users=users)
+
+
+@bp.route("/reports/generate/<int:user_id>", methods=["POST"])
+def trigger_report(user_id: int):
+    from nutritrack.worker.tasks import generate_weekly_report
+
+    task = generate_weekly_report.delay(user_id)
+    return render_template("admin/task_status.html", task_id=task.id, user_id=user_id)

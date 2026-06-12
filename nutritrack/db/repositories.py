@@ -154,6 +154,17 @@ class FoodEntryRepository:
         )
         return food_entry
 
+    def get_by_user_and_date_range(
+        self, user_id: int, start: date, end: date
+    ) -> list[FoodEntryModel]:
+        return (
+            self.session.query(FoodEntryModel)
+            .filter(FoodEntryModel.user_id == user_id)
+            .filter(FoodEntryModel.logged_date >= start)
+            .filter(FoodEntryModel.logged_date <= end)
+            .all()
+        )
+
 
 class MacroGoalRepository:
     def __init__(self, session: Session):
