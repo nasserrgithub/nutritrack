@@ -1,0 +1,30 @@
+{% extends "admin/base.html" %}
+
+{% block content %}
+<h2>Users</h2>
+
+<div class="card">
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Email</th>
+                <th>Activity Level</th>
+                <th>Active Status</th>
+                <th>Created Date</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for user in users %}
+            <tr>
+                <td>{{ user.id }}</td>
+                <td>{{ user.email }}</td>
+                <td>{{ user.activity_level }}</td>
+                <td>{{ user.is_active }}</td>
+                <td>{{ user.created_at }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}
