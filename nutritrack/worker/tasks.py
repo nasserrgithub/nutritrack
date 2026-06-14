@@ -44,9 +44,14 @@ def generate_weekly_report(user_id: int) -> dict:
             effective_date=macro_goal_db.effective_date,
         )
 
+        user_repo = UserRepository(session)
+        user = user_repo.get_by_id(user_id)
+        user_email = user.email
+
     macro_aggregator = MacroAggregator(food_entries, macro_goal)
     remaining_macros = macro_aggregator.remaining_macros(today_only=False)
     summary = dict(
+        email=user_email,
         start_date=start,
         end_date=end,
         total_calories=macro_aggregator.total_calories,
@@ -67,12 +72,8 @@ def generate_weekly_report(user_id: int) -> dict:
 @celery_app.task
 def send_weekly_report_email(user_id: int) -> dict:
     summary = generate_weekly_report(user_id)
+    email = summary["email"]
 
-    with get_session() as session:
-        user_repo = UserRepository(session)
-        user = user_repo.get_by_id(user_id)
-        email = user.email
-
-    html = render_html(summary_data={**summary, "email": email})
+    html = render_html(summary_data=summary)
     send_email(to=email, subject="Weekly Macros Summary Report", html_body=html)
     return {"status": "sent", "user_id": user_id, "email": email}

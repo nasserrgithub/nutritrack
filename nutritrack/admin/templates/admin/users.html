@@ -29,6 +29,8 @@
                     <form method="POST" action="/admin/reports/send-email/{{ user.id }}" style="display:inline;">
                         <button type="submit">Send email</button>
                     </form>
+                    <a href="/admin/export/weekly-report/{{ user.id }}">Download PDF</a>
+                    <a href="/admin/export/food-log/{{ user.id }}">Download CSV</a>
                 </td>
             </tr>
             {% endfor %}
