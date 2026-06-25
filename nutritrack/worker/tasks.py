@@ -48,8 +48,8 @@ def generate_weekly_report(user_id: int) -> dict:
         user = user_repo.get_by_id(user_id)
         user_email = user.email
 
-    macro_aggregator = MacroAggregator(food_entries, macro_goal)
-    remaining_macros = macro_aggregator.remaining_macros(today_only=False)
+    macro_aggregator = MacroAggregator(food_entries, macro_goal, num_days=7)
+    remaining_macros = macro_aggregator.remaining_macros()
     summary = dict(
         email=user_email,
         start_date=start,

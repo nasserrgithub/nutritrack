@@ -61,7 +61,9 @@ def get_daily_totals(entries: list[FoodEntry]) -> Generator[dict, None, None]:
 
 
 class MacroAggregator:
-    def __init__(self, food_entries: list[FoodEntry], macro_goal: MacroGoal) -> None:
+    def __init__(
+        self, food_entries: list[FoodEntry], macro_goal: MacroGoal, num_days: int = 1
+    ) -> None:
         self.macro_goal = macro_goal
         self.total_calories = 0
         self.total_protein = 0
@@ -69,20 +71,14 @@ class MacroAggregator:
         self.total_fat = 0
         self.entry_count = 0
         self.food_counter: Counter[str] = Counter()
-        self.date_counter = 0
+        self.date_counter = num_days
         self.latest_food_entry = None
-        is_first = True
 
         # Get total macros per entry date
         daily_totals = get_daily_totals(food_entries)
 
         # Increment macros per day intake
         for daily_total in daily_totals:
-            # Store latest entry as this will be the basis for computation of remaining macros for the day
-            if is_first:
-                self.latest_food_entry = daily_total
-                is_first = False
-
             self.total_calories += daily_total["total_calories"]
             self.total_protein += daily_total["total_protein"]
             self.total_carbs += daily_total["total_carbs"]
@@ -93,24 +89,7 @@ class MacroAggregator:
             for food in daily_total["foods"]:
                 self.food_counter[food.name] += 1
 
-            # Count number of days
-            self.date_counter += 1
-
-    def remaining_macros(self, today_only: bool = True) -> dict:
-        if today_only:
-            if self.latest_food_entry is None:
-                raise ValueError("No food entries logged yet")
-
-            return {
-                "calories": self.macro_goal.calories
-                - self.latest_food_entry["total_calories"],
-                "protein": self.macro_goal.protein_g
-                - self.latest_food_entry["total_protein"],
-                "carbs": self.macro_goal.carbs_g
-                - self.latest_food_entry["total_carbs"],
-                "fat": self.macro_goal.fat_g - self.latest_food_entry["total_fat"],
-            }
-
+    def remaining_macros(self) -> dict:
         return {
             "calories": self.macro_goal.calories * self.date_counter
             - self.total_calories,

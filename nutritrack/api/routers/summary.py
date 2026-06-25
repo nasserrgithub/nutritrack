@@ -54,7 +54,9 @@ def get_daily_summary(
         effective_date=macro_goal_model.effective_date,
     )
 
-    macro_aggregator = MacroAggregator(food_entries=food_entries, macro_goal=macro_goal)
+    macro_aggregator = MacroAggregator(
+        food_entries=food_entries, macro_goal=macro_goal, num_days=1
+    )
     remaining_macros = macro_aggregator.remaining_macros()
 
     return DailySummaryResponse(
