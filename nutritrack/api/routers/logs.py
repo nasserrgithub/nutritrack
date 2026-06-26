@@ -58,7 +58,16 @@ async def log_food_entry(
         meal_slot=food_entry.meal_slot,
     )
 
-    return FoodEntryResponse.model_validate(food_entry_created)
+    return FoodEntryResponse(
+        id=food_entry_created.id,
+        user_id=food_entry_created.user_id,
+        food_id=food_entry_created.food_id,
+        food_name=food_entry_created.food.name,
+        weight_g=food_entry_created.weight_g,
+        meal_slot=food_entry_created.meal_slot,
+        logged_date=food_entry_created.logged_date,
+        created_at=food_entry_created.created_at,
+    )
 
 
 @router.get("/{log_date}", response_model=list[FoodEntryResponse])
@@ -71,7 +80,19 @@ def get_food_entry_by_date(
     food_entry_repo = FoodEntryRepository(session)
     food_entries = food_entry_repo.get_by_user_and_date(user.id, log_date)
 
-    return [FoodEntryResponse.model_validate(food_entry) for food_entry in food_entries]
+    return [
+        FoodEntryResponse(
+            id=food_entry.id,
+            user_id=food_entry.user_id,
+            food_id=food_entry.food_id,
+            food_name=food_entry.food.name,
+            weight_g=food_entry.weight_g,
+            meal_slot=food_entry.meal_slot,
+            logged_date=food_entry.logged_date,
+            created_at=food_entry.created_at,
+        )
+        for food_entry in food_entries
+    ]
 
 
 @router.post(
@@ -111,7 +132,16 @@ async def log_natural_meal(
         )
 
         food_entry_responses.append(
-            FoodEntryResponse.model_validate(food_entry_created)
+            FoodEntryResponse(
+                id=food_entry_created.id,
+                user_id=food_entry_created.user_id,
+                food_id=food_entry_created.food_id,
+                food_name=food_entry_created.food.name,
+                weight_g=food_entry_created.weight_g,
+                meal_slot=food_entry_created.meal_slot,
+                logged_date=food_entry_created.logged_date,
+                created_at=food_entry_created.created_at,
+            )
         )
 
     return food_entry_responses

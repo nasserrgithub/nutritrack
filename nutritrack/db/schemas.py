@@ -79,6 +79,7 @@ class FoodEntryResponse(BaseModel):
     id: int
     user_id: int
     food_id: int
+    food_name: str
     weight_g: float
     meal_slot: str
     logged_date: date
