@@ -2,7 +2,13 @@ from typing import Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 from datetime import date
-from nutritrack.db.models import FoodModel, UserModel, FoodEntryModel, MacroGoalModel
+from nutritrack.db.models import (
+    FoodModel,
+    UserModel,
+    FoodEntryModel,
+    MacroGoalModel,
+    WeightEntryModel,
+)
 from nutritrack.core.exceptions import (
     FoodNotFoundError,
     UserNotFoundError,
@@ -207,3 +213,38 @@ class MacroGoalRepository:
             raise GoalNotSetError()
 
         return macro_goal
+
+
+class WeightEntryRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def create(
+        self,
+        user_id: int,
+        weight_kg: float,
+        logged_date: date,
+        note: Optional[str] = None,
+    ) -> WeightEntryModel:
+        weight_entry = WeightEntryModel(
+            user_id=user_id,
+            weight_kg=weight_kg,
+            logged_date=logged_date,
+            note=note,
+        )
+        self.session.add(weight_entry)
+        self.session.flush()
+        logger.info(f"Created weight entry: user_id={user_id}, weight_kg={weight_kg}")
+        return weight_entry
+
+    def get_by_user_and_date_range(
+        self, user_id: int, start: date, end: date
+    ) -> list[WeightEntryModel]:
+        return (
+            self.session.query(WeightEntryModel)
+            .filter(WeightEntryModel.user_id == user_id)
+            .filter(WeightEntryModel.logged_date >= start)
+            .filter(WeightEntryModel.logged_date <= end)
+            .order_by(WeightEntryModel.logged_date)
+            .all()
+        )

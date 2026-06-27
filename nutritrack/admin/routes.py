@@ -9,6 +9,7 @@ from nutritrack.db.database import get_session
 from nutritrack.db.models import UserModel, FoodModel, FoodEntryModel
 from nutritrack.db.repositories import FoodEntryRepository, UserRepository
 from nutritrack.worker.tasks import generate_weekly_report
+from nutritrack.api.routers.summary import orm_to_food_entry
 
 bp = Blueprint("admin", __name__, url_prefix="/admin")
 
@@ -87,7 +88,6 @@ def export_food_log(user_id: int) -> Response:
             repo = FoodEntryRepository(session)
             entries = repo.get_by_user(user_id)
             for entry in entries:
-                from nutritrack.api.routers.summary import orm_to_food_entry
 
                 fe = orm_to_food_entry(entry)
                 writer.writerow(

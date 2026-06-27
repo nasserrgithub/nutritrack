@@ -13,7 +13,7 @@ from nutritrack.db.schemas import (
     NaturalMealLog,
     SuggestionResponse,
 )
-from nutritrack.db.models import UserModel
+from nutritrack.db.models import UserModel, FoodEntryModel
 from nutritrack.ai.client import (
     lookup_food_macros,
     parse_natural_language_meal,
@@ -26,6 +26,25 @@ from nutritrack.core.logger import get_logger
 
 logger = get_logger(__name__)
 router = APIRouter()
+
+
+# Helpers
+def build_entry_response(food_entry: FoodEntryModel) -> FoodEntryResponse:
+    fe = orm_to_food_entry(food_entry)
+    return FoodEntryResponse(
+        id=food_entry.id,
+        user_id=food_entry.user_id,
+        food_id=food_entry.food_id,
+        food_name=food_entry.food.name,
+        weight_g=food_entry.weight_g,
+        meal_slot=food_entry.meal_slot,
+        logged_date=food_entry.logged_date,
+        created_at=food_entry.created_at,
+        calories=fe.scaled_calories(),
+        protein_g=fe.scaled_protein(),
+        carbs_g=fe.scaled_carbs(),
+        fat_g=fe.scaled_fat(),
+    )
 
 
 @router.post("/", response_model=FoodEntryResponse, status_code=status.HTTP_201_CREATED)
@@ -58,16 +77,7 @@ async def log_food_entry(
         meal_slot=food_entry.meal_slot,
     )
 
-    return FoodEntryResponse(
-        id=food_entry_created.id,
-        user_id=food_entry_created.user_id,
-        food_id=food_entry_created.food_id,
-        food_name=food_entry_created.food.name,
-        weight_g=food_entry_created.weight_g,
-        meal_slot=food_entry_created.meal_slot,
-        logged_date=food_entry_created.logged_date,
-        created_at=food_entry_created.created_at,
-    )
+    return build_entry_response(food_entry_created)
 
 
 @router.get("/{log_date}", response_model=list[FoodEntryResponse])
@@ -80,19 +90,7 @@ def get_food_entry_by_date(
     food_entry_repo = FoodEntryRepository(session)
     food_entries = food_entry_repo.get_by_user_and_date(user.id, log_date)
 
-    return [
-        FoodEntryResponse(
-            id=food_entry.id,
-            user_id=food_entry.user_id,
-            food_id=food_entry.food_id,
-            food_name=food_entry.food.name,
-            weight_g=food_entry.weight_g,
-            meal_slot=food_entry.meal_slot,
-            logged_date=food_entry.logged_date,
-            created_at=food_entry.created_at,
-        )
-        for food_entry in food_entries
-    ]
+    return [build_entry_response(food_entry) for food_entry in food_entries]
 
 
 @router.post(
@@ -131,18 +129,7 @@ async def log_natural_meal(
             meal_slot=meal_log.meal_slot,
         )
 
-        food_entry_responses.append(
-            FoodEntryResponse(
-                id=food_entry_created.id,
-                user_id=food_entry_created.user_id,
-                food_id=food_entry_created.food_id,
-                food_name=food_entry_created.food.name,
-                weight_g=food_entry_created.weight_g,
-                meal_slot=food_entry_created.meal_slot,
-                logged_date=food_entry_created.logged_date,
-                created_at=food_entry_created.created_at,
-            )
-        )
+        food_entry_responses.append(build_entry_response(food_entry_created))
 
     return food_entry_responses
 

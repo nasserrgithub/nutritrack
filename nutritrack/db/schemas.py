@@ -84,6 +84,10 @@ class FoodEntryResponse(BaseModel):
     meal_slot: str
     logged_date: date
     created_at: datetime
+    calories: float
+    protein_g: float
+    carbs_g: float
+    fat_g: float
 
     model_config = {"from_attributes": True}
 
@@ -142,3 +146,20 @@ class SuggestionResponse(BaseModel):
     food_name: str
     weight_g: float
     reason: str
+
+
+class WeightEntryCreate(BaseModel):
+    weight_kg: float = Field(..., gt=0)
+    logged_date: date = Field(default_factory=date.today)
+    note: Optional[str] = Field(default=None, max_length=255)
+
+
+class WeightEntryResponse(BaseModel):
+    id: int
+    user_id: int
+    weight_kg: float
+    logged_date: date
+    note: Optional[str]
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
