@@ -142,10 +142,17 @@ class NaturalMealLog(BaseModel):
     logged_date: date = Field(default_factory=date.today)
 
 
+class SuggestionRequest(BaseModel):
+    available_foods: str = Field(...)
+
+
 class SuggestionResponse(BaseModel):
     food_name: str
     weight_g: float
-    reason: str
+    calories: float
+    protein_g: float
+    carbs_g: float
+    fat_g: float
 
 
 class WeightEntryCreate(BaseModel):

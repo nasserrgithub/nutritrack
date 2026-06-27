@@ -99,14 +99,21 @@ async def parse_natural_language_meal(user_input: str) -> list[dict]:
         raise AIServiceError(str(exc))
 
 
-async def get_food_suggestions(remaining: dict, goal: dict) -> list[dict]:
+async def get_food_suggestions(
+    remaining: dict, goal: dict, available_foods_macros: list[dict]
+) -> list[dict]:
     client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
     try:
         response = await client.messages.create(
             model="claude-sonnet-4-5",
             max_tokens=1024,
             messages=[
-                {"role": "user", "content": daily_suggestions_prompt(remaining, goal)}
+                {
+                    "role": "user",
+                    "content": daily_suggestions_prompt(
+                        remaining, goal, available_foods_macros
+                    ),
+                }
             ],
         )
         block = response.content[0]
@@ -123,7 +130,10 @@ async def get_food_suggestions(remaining: dict, goal: dict) -> list[dict]:
             logger.info(
                 f"food_name: {food['food_name']} "
                 f"weight_g: {food['weight_g']} "
-                f"reason: {food['reason']} "
+                f"calories: {food['calories']} "
+                f"protein_g: {food['protein_g']} "
+                f"carbs_g: {food['carbs_g']} "
+                f"fat_g: {food['fat_g']} "
             )
 
         return result

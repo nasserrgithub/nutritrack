@@ -7,7 +7,7 @@ from reportlab.pdfgen import canvas
 from reportlab.lib import colors
 from nutritrack.db.database import get_session
 from nutritrack.db.models import UserModel, FoodModel, FoodEntryModel
-from nutritrack.db.repositories import FoodEntryRepository, UserRepository
+from nutritrack.db.repositories import FoodEntryRepository
 from nutritrack.worker.tasks import generate_weekly_report
 from nutritrack.api.routers.summary import orm_to_food_entry
 

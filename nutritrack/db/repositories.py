@@ -206,6 +206,7 @@ class MacroGoalRepository:
             .filter(MacroGoalModel.user_id == user_id)
             .filter(MacroGoalModel.effective_date <= as_of_date)
             .order_by(desc(MacroGoalModel.effective_date))
+            .order_by(desc(MacroGoalModel.id))
             .first()
         )
 
