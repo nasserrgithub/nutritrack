@@ -127,3 +127,13 @@ async def log_natural_meal(
         food_entry_responses.append(build_entry_response(food_entry_created))
 
     return food_entry_responses
+
+
+@router.delete("/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_food_entry(
+    entry_id: int,
+    user: UserModel = Depends(get_current_user),
+    session: Session = Depends(get_db_session),
+) -> None:
+    repo = FoodEntryRepository(session)
+    repo.delete(entry_id, user.id)

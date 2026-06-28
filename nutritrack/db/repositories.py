@@ -171,6 +171,19 @@ class FoodEntryRepository:
             .all()
         )
 
+    def delete(self, entry_id: int, user_id: int) -> None:
+        entry = (
+            self.session.query(FoodEntryModel)
+            .filter(FoodEntryModel.id == entry_id)
+            .filter(FoodEntryModel.user_id == user_id)
+            .first()
+        )
+        if not entry:
+            raise FoodNotFoundError(str(entry_id))
+        self.session.delete(entry)
+        self.session.flush()
+        logger.info(f"Deleted food entry id={entry_id} for user_id={user_id}")
+
 
 class MacroGoalRepository:
     def __init__(self, session: Session):
