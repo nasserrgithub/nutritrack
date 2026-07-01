@@ -89,14 +89,20 @@ class MacroAggregator:
             for food in daily_total["foods"]:
                 self.food_counter[food.name] += 1
 
+        # Round metrics to two decimals for consistency
+        self.total_calories = round(self.total_calories, 2)
+        self.total_protein = round(self.total_protein, 2)
+        self.total_carbs = round(self.total_carbs, 2)
+        self.total_fat = round(self.total_fat, 2)
+
     def remaining_macros(self) -> dict:
         return {
-            "calories": self.macro_goal.calories * self.date_counter
-            - self.total_calories,
-            "protein": self.macro_goal.protein_g * self.date_counter
-            - self.total_protein,
-            "carbs": self.macro_goal.carbs_g * self.date_counter - self.total_carbs,
-            "fat": self.macro_goal.fat_g * self.date_counter - self.total_fat,
+            "calories": round((self.macro_goal.calories * self.date_counter
+            - self.total_calories), 2),
+            "protein": round((self.macro_goal.protein_g * self.date_counter
+            - self.total_protein), 2),
+            "carbs": round((self.macro_goal.carbs_g * self.date_counter - self.total_carbs), 2),
+            "fat": round((self.macro_goal.fat_g * self.date_counter - self.total_fat), 2),
         }
 
     def top_foods(self, n: int = 5) -> list:
