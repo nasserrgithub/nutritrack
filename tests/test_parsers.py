@@ -47,3 +47,23 @@ def test_remaining_fat(sample_food_entries, sample_macro_goal):
     ma = MacroAggregator(sample_food_entries, sample_macro_goal, num_days=1)
     expected = 35.1
     assert ma.remaining_macros()["fat"] == expected
+
+
+def test_top_foods_returns_most_common(sample_food_entries, sample_macro_goal):
+    ma = MacroAggregator(sample_food_entries, sample_macro_goal)
+    top = ma.top_foods(n=1)
+    expected = "chicken breast"
+    assert top[0][0] == expected  # appears twice vs boiled egg once
+
+
+def test_top_foods_count(sample_food_entries, sample_macro_goal):
+    ma = MacroAggregator(sample_food_entries, sample_macro_goal)
+    top = ma.top_foods(n=1)
+    expected = 2
+    assert top[0][1] == expected  # appears twice vs boiled egg once
+
+
+def test_entry_count(sample_food_entries, sample_macro_goal):
+    ma = MacroAggregator(sample_food_entries, sample_macro_goal)
+    expected = 3
+    assert ma.entry_count == expected

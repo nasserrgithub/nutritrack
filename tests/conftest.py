@@ -1,5 +1,5 @@
 import pytest
-from datetime import date
+from datetime import date, timedelta
 from nutritrack.core.models import Food, FoodEntry, MacroGoal
 
 
@@ -55,5 +55,20 @@ def sample_food_entries(sample_food: Food, sample_food2: Food) -> list[FoodEntry
         ),
         FoodEntry(
             food=sample_food, weight_g=150, logged_date=date.today(), meal_slot="lunch"
+        ),
+    ]
+
+
+@pytest.fixture
+def multi_day_food_entries(sample_food: Food, sample_food2: Food) -> list[FoodEntry]:
+    today = date.today()
+    yesterday = today - timedelta(days=1)
+    return [
+        FoodEntry(food=sample_food, weight_g=100, logged_date=today, meal_slot="lunch"),
+        FoodEntry(
+            food=sample_food2, weight_g=150, logged_date=yesterday, meal_slot="dinner"
+        ),
+        FoodEntry(
+            food=sample_food, weight_g=200, logged_date=yesterday, meal_slot="breakfast"
         ),
     ]
