@@ -87,6 +87,7 @@ def db_engine():
     yield engine
     engine.dispose()
 
+
 @pytest.fixture
 def db_session(db_engine):
     connection = db_engine.connect()
