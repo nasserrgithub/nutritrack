@@ -1,6 +1,12 @@
 import pytest
 from datetime import date, timedelta
 from nutritrack.core.models import Food, FoodEntry, MacroGoal
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from nutritrack.db.base import Base
+from nutritrack.api.settings import get_settings
+
+settings = get_settings()
 
 
 @pytest.fixture
@@ -72,3 +78,24 @@ def multi_day_food_entries(sample_food: Food, sample_food2: Food) -> list[FoodEn
             food=sample_food, weight_g=200, logged_date=yesterday, meal_slot="breakfast"
         ),
     ]
+
+
+@pytest.fixture(scope="session")
+def db_engine():
+    engine = create_engine(settings.database_url)
+    Base.metadata.create_all(engine)
+    yield engine
+    engine.dispose()
+
+@pytest.fixture
+def db_session(db_engine):
+    connection = db_engine.connect()
+    transaction = connection.begin()
+    Session = sessionmaker(bind=connection)
+    session = Session()
+
+    yield session
+
+    session.close()
+    transaction.rollback()
+    connection.close()
