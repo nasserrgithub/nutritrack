@@ -26,7 +26,7 @@ def test_food_repository_create(db_session):
 def test_delete_own_entry_succeeds(db_session):
     user_repo = UserRepository(db_session)
     user = user_repo.create(
-        email="test@gmail.com",
+        email="test@example.com",
         hashed_password=hash_password("test123"),
         weight_kg=80.0,
         height_cm=170.0,
@@ -55,7 +55,7 @@ def test_delete_own_entry_succeeds(db_session):
 def test_delete_other_users_entry_raises(db_session):
     user_repo = UserRepository(db_session)
     user = user_repo.create(
-        email="test@gmail.com",
+        email="test@example.com",
         hashed_password=hash_password("test123"),
         weight_kg=80.0,
         height_cm=170.0,
@@ -63,7 +63,7 @@ def test_delete_other_users_entry_raises(db_session):
         gender="male",
     )
     user2 = user_repo.create(
-        email="tes2t@gmail.com",
+        email="tes2t@example.com",
         hashed_password=hash_password("test1232"),
         weight_kg=82.0,
         height_cm=172.0,

@@ -1,14 +1,21 @@
 import pytest
+
 from datetime import date, timedelta
-from nutritrack.core.models import Food, FoodEntry, MacroGoal
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from fastapi.testclient import TestClient
+
 from nutritrack.db.base import Base
+from nutritrack.db.models import UserModel
 from nutritrack.api.settings import get_settings
+from nutritrack.api.main import app
+from nutritrack.api.dependencies import get_current_user, get_db_session
+from nutritrack.core.models import Food, FoodEntry, MacroGoal
 
 settings = get_settings()
 
 
+# Generic Fixtures
 @pytest.fixture
 def sample_food() -> Food:
     return Food(
@@ -80,6 +87,7 @@ def multi_day_food_entries(sample_food: Food, sample_food2: Food) -> list[FoodEn
     ]
 
 
+# Fixtures for DB connection
 @pytest.fixture(scope="session")
 def db_engine():
     engine = create_engine(settings.database_url)
@@ -100,3 +108,43 @@ def db_session(db_engine):
     session.close()
     transaction.rollback()
     connection.close()
+
+
+# Fixtures for FastAPI endpoints tests
+@pytest.fixture
+def client(db_session):
+    def override_get_current_user():
+        return UserModel(
+            id=1,
+            email="test@example.com",
+            hashed_password="hashed",
+            weight_kg=75.0,
+            height_cm=175.0,
+            age=28,
+            gender="male",
+            is_active=True,
+        )
+
+    def override_get_db_session():
+        yield db_session
+
+    app.dependency_overrides[get_current_user] = override_get_current_user
+    app.dependency_overrides[get_db_session] = override_get_db_session
+
+    yield TestClient(app)
+
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def registered_user(client):
+    user_data = {
+        "email": "test@example.com",
+        "password": "testpass123",
+        "weight_kg": 75.0,
+        "height_cm": 175.0,
+        "age": 28,
+        "gender": "male",
+    }
+    client.post("/auth/register", json=user_data)
+    return user_data
