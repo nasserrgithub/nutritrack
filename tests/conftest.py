@@ -7,8 +7,10 @@ from fastapi.testclient import TestClient
 
 from nutritrack.db.base import Base
 from nutritrack.db.models import UserModel
+from nutritrack.db.repositories import UserRepository
 from nutritrack.api.settings import get_settings
 from nutritrack.api.main import app
+from nutritrack.api.auth_utils import hash_password
 from nutritrack.api.dependencies import get_current_user, get_db_session
 from nutritrack.core.models import Food, FoodEntry, MacroGoal
 
@@ -113,17 +115,19 @@ def db_session(db_engine):
 # Fixtures for FastAPI endpoints tests
 @pytest.fixture
 def client(db_session):
+
+    user_repo = UserRepository(db_session)
+    test_user = user_repo.create(
+        email="fixture_user@example.com",
+        hashed_password=hash_password("testpass123"),
+        weight_kg=75.0,
+        height_cm=175.0,
+        age=28,
+        gender="male",
+    )
+
     def override_get_current_user():
-        return UserModel(
-            id=1,
-            email="test@example.com",
-            hashed_password="hashed",
-            weight_kg=75.0,
-            height_cm=175.0,
-            age=28,
-            gender="male",
-            is_active=True,
-        )
+        return test_user
 
     def override_get_db_session():
         yield db_session
@@ -139,7 +143,7 @@ def client(db_session):
 @pytest.fixture
 def registered_user(client):
     user_data = {
-        "email": "test@example.com",
+        "email": "fixture_user@example.com",
         "password": "testpass123",
         "weight_kg": 75.0,
         "height_cm": 175.0,
