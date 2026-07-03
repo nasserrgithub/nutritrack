@@ -3520,6 +3520,1007 @@ The type hint `HTTPAuthorizationCredentials` is required — without it, mypy ca
 
 ---
 
+## 135 — Flask vs FastAPI — key differences
+
+Both are Python web frameworks but optimized for different use cases:
+
+```
+FastAPI                          Flask
+────────────────────             ────────────────────
+returns JSON by default          returns HTML or JSON
+Pydantic validation built-in     manual validation
+async native                     sync by default
+auto /docs generation            no auto docs
+dependency injection             no DI system
+type hints first-class           optional
+best for: REST APIs              best for: server-rendered HTML, admin panels
+```
+
+Flask's `render_template()` generates complete HTML pages — the browser reloads on every navigation. FastAPI's endpoints return JSON consumed by a frontend (React). Both can do either, but each is optimized for its primary use case.
+
+---
+
+## 136 — Flask app factory pattern
+
+Wraps app creation in a function for testability and configurability:
+
+```python
+def create_app(config: str = "production") -> Flask:
+    app = Flask(__name__, template_folder="templates")
+    app.config["SECRET_KEY"] = settings.secret_key
+
+    from nutritrack.admin.routes import bp
+    app.register_blueprint(bp)
+
+    return app
+```
+
+Benefits over module-level creation:
+- Pass different configs for testing vs production
+- Create fresh isolated app instances in tests
+- Defer configuration until needed
+
+Import blueprint inside the function to avoid circular imports — the blueprint imports from the same package.
+
+---
+
+## 137 — Flask blueprints
+
+Equivalent of FastAPI routers — groups related routes:
+
+```python
+# routes.py
+from flask import Blueprint, render_template
+bp = Blueprint("admin", __name__, url_prefix="/admin")
+
+@bp.route("/")              # GET /admin/
+def dashboard(): ...
+
+@bp.route("/users")         # GET /admin/users
+def users(): ...
+
+@bp.route("/login", methods=["GET", "POST"])  # GET and POST /admin/login
+def login(): ...
+```
+
+```python
+# app.py
+app.register_blueprint(bp)
+```
+
+Flask uses `.route()` not `.router()`. `methods=["GET"]` is optional for GET-only routes — Flask defaults to GET. Specify methods when accepting POST or multiple methods.
+
+---
+
+## 138 — Jinja2 templates
+
+Flask's templating engine — HTML with Python-like expressions:
+
+```html
+{{ variable }}              — output a variable
+{% for item in items %}     — loop
+{% if condition %}          — conditional
+{% extends "base.html" %}   — inherit from base template
+{% block content %}         — define/fill a content block
+{{ value | round(2) }}      — apply a filter (round to 2 decimal places)
+```
+
+Template inheritance — `base.html` defines the layout, child templates fill in blocks:
+
+```html
+<!-- base.html -->
+<nav>...</nav>
+{% block content %}{% endblock %}
+
+<!-- dashboard.html -->
+{% extends "admin/base.html" %}
+{% block content %}
+<h2>Dashboard</h2>
+{{ user_count }} users
+{% endblock %}
+```
+
+`render_template("admin/dashboard.html", user_count=42)` — passes keyword arguments as template variables.
+
+---
+
+## 139 — DetachedInstanceError — SQLAlchemy objects after session closes
+
+SQLAlchemy objects become "detached" when their session closes. Accessing attributes on detached objects raises `DetachedInstanceError`:
+
+```python
+# ❌ wrong — session closes before template accesses attributes
+with get_session() as session:
+    users = session.query(UserModel).all()
+# session closed here — users are detached
+
+return render_template("users.html", users=users)
+# template accesses user.email → DetachedInstanceError
+```
+
+Fix — convert to plain dicts before session closes:
+
+```python
+# ✅ correct — plain dicts never detach
+with get_session() as session:
+    users = [{
+        "id": u.id,
+        "email": u.email,
+        "activity_level": u.activity_level,
+    } for u in session.query(UserModel).all()]
+
+return render_template("users.html", users=users)
+```
+
+Plain Python values (strings, ints, dicts) are copied out of SQLAlchemy immediately — they're never detached. This is also better production practice — keeps business logic (DB queries) separate from view logic (templates).
+
+---
+
+## 140 — Celery — task queue architecture
+
+Three processes running simultaneously:
+
+```
+Web app (Flask/FastAPI)    Redis (broker)         Celery worker
+────────────────────       ──────────────         ─────────────
+task.delay(args)      →    stores task       →    picks up task
+returns immediately        in queue               executes it
+                                                  stores result
+```
+
+**Celery app setup:**
+
+```python
+from celery import Celery
+
+celery_app = Celery(
+    "nutritrack",
+    broker=settings.redis_url,       # where tasks are sent
+    backend=settings.redis_url,      # where results are stored
+    include=["nutritrack.worker.tasks"],  # where to find tasks
+    broker_connection_retry_on_startup=True,
+)
+```
+
+**Task definition:**
+
+```python
+@celery_app.task
+def generate_weekly_report(user_id: int) -> dict:
+    # runs in worker process, not in web app
+    ...
+    return result
+```
+
+**Dispatching — `.delay()` sends to queue without waiting:**
+
+```python
+task = generate_weekly_report.delay(user_id=1)
+# returns immediately
+print(task.id)      # unique task ID
+print(task.status)  # PENDING — not done yet
+```
+
+**Calling directly (not queued):**
+
+```python
+result = generate_weekly_report(user_id=1)  # runs immediately, blocks
+```
+
+Use `.delay()` for background work. Call directly when you need the result immediately (e.g. calling from inside another task).
+
+---
+
+## 141 — Redis vs RabbitMQ as Celery broker
+
+Both work as Celery message brokers:
+
+```
+Redis                          RabbitMQ
+────────────────────           ────────────────────
+primary: in-memory cache       primary: message broker
+brokering is secondary         built for message queuing
+simpler setup                  more complex setup
+good for small-medium load     better for high volume
+already used for caching       separate service
+```
+
+For NutriTrack — Redis is correct. Low task volume, already in use, simpler infrastructure. RabbitMQ makes sense for millions of tasks/day or complex routing requirements.
+
+---
+
+## 142 — Celery on Windows — known issues and fixes
+
+**Issue 1 — `unknown command 'HELLO'`:**
+Celery 5.x requires Redis 6+. The `HELLO` command was added in Redis 6 for RESP3 protocol negotiation. Windows Redis port (tporadowski) is stuck at 5.x.
+
+Fix — use Celery 5.4.0 which has better compatibility, or install Redis via WSL.
+
+**Issue 2 — `PermissionError: Access is denied` with prefork pool:**
+Celery's default `prefork` pool uses shared memory (Windows semaphores) which requires elevated permissions.
+
+Fix — use `--pool=solo` for Windows development:
+```bash
+celery -A nutritrack.worker.celery_app worker --loglevel=info --pool=solo
+```
+
+`solo` runs tasks in the same process — no multiprocessing, no permission issues. Fine for development; use `prefork` in production on Linux.
+
+---
+
+## 143 — Celery worker subcommands
+
+```bash
+celery -A myapp worker    # start worker that executes tasks
+celery -A myapp beat      # start scheduler for periodic tasks
+celery -A myapp flower    # web monitoring UI
+celery -A myapp inspect   # inspect running workers
+celery -A myapp purge     # clear all pending tasks
+```
+
+Full worker command for NutriTrack on Windows:
+```bash
+celery -A nutritrack.worker.celery_app worker --loglevel=info --pool=solo
+```
+
+In production on Linux — run both worker and beat:
+```bash
+celery -A nutritrack.worker.celery_app worker  # executes tasks
+celery -A nutritrack.worker.celery_app beat    # schedules periodic tasks
+```
+
+---
+
+## 144 — Rendering Jinja2 templates outside Flask
+
+Flask's `render_template()` only works inside a Flask app context. To render templates from a Celery task or standalone script, use Jinja2 directly:
+
+```python
+from jinja2 import Environment, FileSystemLoader
+from pathlib import Path
+
+def render_html(summary_data: dict) -> str:
+    template_dir = Path(__file__).parent.parent / "admin" / "templates"
+    env = Environment(loader=FileSystemLoader(str(template_dir)))
+    template = env.get_template("admin/weekly_report_email.html")
+    return template.render(**summary_data)
+```
+
+- `Environment` — Jinja2 rendering engine with configuration
+- `FileSystemLoader` — loads templates from a directory on disk
+- `env.get_template()` — loads a specific template file (relative to template_dir)
+- `template.render(**data)` — replaces `{{ variable }}` with actual values
+
+---
+
+## 145 — Sending HTML emails with smtplib
+
+```python
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+
+def send_email(to: str, subject: str, html_body: str) -> None:
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = settings.mail_from
+    msg["To"] = to
+    msg.attach(MIMEText(html_body, "html"))
+
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+        server.login(settings.mail_username, settings.mail_password)
+        server.sendmail(settings.mail_from, to, msg.as_string())
+```
+
+For Gmail, use an **App Password** (not your regular password):
+1. Enable 2FA on Google account
+2. Go to https://myaccount.google.com/apppasswords
+3. Generate app password for "Mail"
+4. Remove spaces from the 16-character password in `.env`
+
+`SMTP_SSL` on port 465 — encrypted connection from the start. Alternative: `SMTP` on port 587 with `starttls()`.
+
+---
+
+## 146 — CSV streaming with Flask
+
+For large exports, stream CSV row by row instead of building it all in memory:
+
+```python
+from flask import Response, stream_with_context
+import csv, io
+
+@bp.route("/export/food-log/<int:user_id>")
+def export_food_log(user_id: int):
+    def generate():
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(["id", "food_name", "weight_g", "calories"])  # header
+        yield output.getvalue()
+        output.seek(0); output.truncate(0)
+
+        with get_session() as session:
+            for entry in FoodEntryRepository(session).get_by_user(user_id):
+                writer.writerow([entry.id, entry.food.name, ...])
+                yield output.getvalue()
+                output.seek(0); output.truncate(0)
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=food_log_{user_id}.csv"}
+    )
+```
+
+`stream_with_context()` — keeps Flask's request context alive during streaming. Without it, accessing `session` or other context-dependent objects fails mid-stream.
+
+User still downloads a complete file — browser assembles the chunks automatically.
+
+---
+
+## 147 — PDF generation with reportlab
+
+```python
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
+from reportlab.lib import colors
+import io
+
+buffer = io.BytesIO()
+c = canvas.Canvas(buffer, pagesize=letter)
+
+# coordinate system: (0,0) = bottom-left, y increases upward
+# letter page = 612 × 792 points (1 point = 1/72 inch)
+c.drawString(100, 750, "NutriTrack Weekly Report")  # x=100, y=750 from bottom
+c.drawString(100, 720, f"User: {email}")
+
+# draw horizontal line: (x1, y1) to (x2, y2)
+c.setStrokeColor(colors.black)
+c.line(100, 648, 500, 648)
+
+# columns at fixed x positions
+c.drawString(100, 630, "Calories")
+c.drawString(300, 630, "703.05")      # Total column at x=300
+c.drawString(450, 630, "2896.95")     # Remaining column at x=450
+
+c.save()
+buffer.seek(0)
+
+return Response(
+    buffer.getvalue(),
+    mimetype="application/pdf",
+    headers={"Content-Disposition": "attachment; filename=report.pdf"}
+)
+```
+
+Key points:
+- `\n` and `\t` don't work in `drawString` — use separate calls at different y/x positions
+- Decrease y by ~20 points per line to move down the page
+- Use `c.line(x1, y1, x2, y2)` for horizontal separators — `─` character renders as black blocks in default font
+- `io.BytesIO()` — in-memory binary buffer, no file written to disk
+
+---
+
+## 148 — N+1 query problem in templates
+
+Keeping the session open while rendering a template risks the N+1 query problem:
+
+```python
+# session open during render_template
+with get_session() as session:
+    users = session.query(UserModel).all()
+    return render_template("users.html", users=users)
+
+# template accesses user.food_entries for each user
+# → 1 query for users + N queries for food_entries = N+1 queries total
+```
+
+Solution — convert to dicts inside the session, extracting only what the template needs:
+
+```python
+with get_session() as session:
+    users = [{"id": u.id, "email": u.email} for u in session.query(UserModel).all()]
+return render_template("users.html", users=users)
+# template has no access to session — can't trigger extra queries
+```
+
+---
+
+## 149 — Flask streaming response vs building all at once
+
+```
+Build all at once:
+- All data loaded into memory simultaneously
+- Simple code
+- Risk of memory exhaustion for large datasets
+
+Stream with generator:
+- Only small chunks in memory at a time
+- Slightly more complex code  
+- Scales to any dataset size
+- Browser assembles chunks into complete file automatically
+```
+
+Use streaming for CSV/file exports in production. Use build-all for PDFs (reportlab requires the complete document before writing).
+
+---
+
+## 150 — NutriTrack Phase 5 file structure
+
+```
+nutritrack/
+├── admin/
+│   ├── __init__.py
+│   ├── app.py              ← Flask app factory
+│   ├── routes.py           ← dashboard, users, exports, task triggers
+│   └── templates/
+│       └── admin/
+│           ├── base.html
+│           ├── dashboard.html
+│           ├── users.html
+│           ├── task_status.html
+│           └── weekly_report_email.html
+├── worker/
+│   ├── __init__.py
+│   ├── celery_app.py       ← Celery config with Redis broker
+│   ├── tasks.py            ← generate_weekly_report, send_weekly_report_email
+│   └── utils.py            ← send_email, render_html
+└── run_admin.py            ← Flask entry point (port 5000)
+```
+
+Run three processes simultaneously:
+```bash
+uvicorn nutritrack.api.main:app --reload          # FastAPI on port 8000
+python run_admin.py                                # Flask on port 5000
+celery -A nutritrack.worker.celery_app worker      # Celery worker
+    --loglevel=info --pool=solo
+```
+
+---
+
+---
+
+## 151 — Why automated tests? The core motivation
+
+Manual testing through Swagger or the UI tells you "does this one specific thing I just tried still work" — it doesn't tell you "did this change silently break something three files away that I forgot even existed." By the time you'd notice something broke via manual testing, it's already potentially in front of a real user.
+
+Automated tests solve this by encoding verification *once*, as code, then re-running that entire verification — every dataclass, every repository, every endpoint — in seconds, any time anything changes. The test suite becomes a permanent, reusable safety net that catches regressions automatically, rather than relying on manually re-clicking through Swagger every time.
+
+**The concrete payoff observed in NutriTrack:** when the `@validate_macros` decorator was tested against all four negative-macro cases, it proved the decorator rejects negative values for *every* parameter — not just protein (the one originally tested manually). Without the parametrized tests, a bug where negative carbs was silently accepted could have gone undetected.
+
+---
+
+## 152 — Unit tests vs integration tests — the fundamental distinction
+
+```
+Unit test:
+  → tests ONE small, isolated piece of logic
+  → no external dependencies (no database, no network, no file system)
+  → fast (milliseconds), simple to write, run constantly during development
+
+Integration test:
+  → tests how multiple real pieces work together
+  → requires real external dependencies (a real database, real connection)
+  → slower (hundreds of milliseconds), more setup required
+  → catches bugs that unit tests can't (FK violations, transaction behavior, etc.)
+```
+
+**Why Phase 1 dataclasses/utils are easiest to unit test:** `MacroAggregator`, `calculate_calories`, `FoodEntry.scaled_calories()` etc. have zero external dependencies — you just construct them in memory and call methods. No database session, no connection pool, no network.
+
+**Why repositories require integration tests:** `FoodEntryRepository.delete()` genuinely needs a real database row to exist with real ownership relationships. You cannot meaningfully test "does the user-scoped query correctly reject another user's entry" without actually hitting a real database.
+
+The architectural separation between Phase 1 (pure dataclasses, no DB) and Phase 2+ (SQLAlchemy ORM) exists precisely to make unit testing easy — it's not accidental that the business logic runs entirely on plain Python objects. This is the payoff of that architectural decision, felt concretely for the first time in Phase 7.
+
+---
+
+## 153 — pytest basics — discovery, assertions, test functions
+
+pytest automatically discovers tests using naming conventions:
+- Test **files** must start with `test_` (e.g. `test_utils.py`)
+- Test **functions** inside those files must start with `test_`
+- `conftest.py` is a special reserved filename — pytest loads it automatically and makes everything defined there available to every test in the same directory and subdirectories, without any import statement needed
+
+**One test function = one specific behavior/scenario.** Splitting tests into separate functions means each scenario gets checked and reported independently — if the first assertion fails, pytest still runs and reports all remaining tests:
+
+```python
+# ❌ merged — if the first assertion fails, you never know about the second
+def test_calculate_calories():
+    assert calculate_calories(10, 20, 5) == 125
+    assert calculate_calories(10, 20, 5, fiber_g=3.0) == 113
+
+# ✅ separated — both scenarios always reported independently
+def test_calculate_calories_no_fiber():
+    assert calculate_calories(10, 20, 5) == 125
+
+def test_calculate_calories_with_fiber():
+    assert calculate_calories(10, 20, 5, fiber_g=3.0) == 113
+```
+
+**`assert` in pytest:** plain Python `assert` statement — if the condition is `False`, pytest intercepts it, shows a detailed diff of what was expected vs what was received, and marks the test as FAILED. No special assertion library needed.
+
+---
+
+## 154 — Fixtures — reusable test setup
+
+A fixture is a function decorated with `@pytest.fixture` that prepares reusable test data or setup, which pytest automatically supplies to any test function that lists it as a parameter:
+
+```python
+# conftest.py
+@pytest.fixture
+def sample_food() -> Food:
+    return Food(name="chicken breast", protein_per_100g=31.0, carbs_per_100g=0.0, fat_per_100g=3.6)
+
+# test file — no import needed, pytest wires it automatically
+def test_scaled_calories(sample_food):   # ← pytest sees "sample_food" and calls the fixture
+    entry = FoodEntry(food=sample_food, weight_g=150, logged_date=date.today(), meal_slot="lunch")
+    assert entry.scaled_calories() == round((31.0*4 + 0.0*4 + 3.6*9) * 150/100, 2)
+```
+
+**Fixtures can depend on other fixtures** — exactly like test functions:
+
+```python
+@pytest.fixture
+def sample_food_entry(sample_food: Food) -> FoodEntry:
+    # pytest calls sample_food first, passes the result in as "sample_food"
+    return FoodEntry(food=sample_food, weight_g=150, logged_date=date.today(), meal_slot="lunch")
+```
+
+**Fixture scope** — controls how often the fixture is created and torn down:
+
+```
+scope="function"  — default, fresh instance for EVERY test function
+scope="session"   — created ONCE for the entire test run, shared by all tests
+scope="module"    — created once per test file
+```
+
+`db_engine` uses `scope="session"` (creating a database engine is expensive, no per-test state). `db_session` uses the default `scope="function"` (must be fresh per test for transaction isolation).
+
+**The `yield` pattern in fixtures — setup and teardown in one function:**
+
+```python
+@pytest.fixture
+def db_session(db_engine):
+    connection = db_engine.connect()
+    transaction = connection.begin()
+    session = Session(bind=connection)
+
+    yield session        # ← test runs here, receives the session
+
+    session.close()      # ← teardown: everything after yield runs after the test
+    transaction.rollback()
+    connection.close()
+```
+
+Everything before `yield` = setup (runs before the test). The test receives the yielded value. Everything after `yield` = teardown (runs after the test, whether it passed or failed — equivalent to `try/finally`).
+
+---
+
+## 155 — `pytest.mark.parametrize` — running one test with multiple inputs
+
+When the same test logic needs to run with several different inputs:
+
+```python
+@pytest.mark.parametrize("protein_g, carbs_g, fat_g, fiber_g", [
+    (-10, 20, 5, None),   # negative protein
+    (10, -20, 5, None),   # negative carbs
+    (10, 20, -5, None),   # negative fat
+    (10, 20, 5, -2.0),    # negative fiber
+])
+def test_calculate_calories_negative_macro_raises(protein_g, carbs_g, fat_g, fiber_g):
+    with pytest.raises(InvalidMacroError):
+        calculate_calories(protein_g=protein_g, carbs_g=carbs_g, fat_g=fat_g, fiber_g=fiber_g)
+```
+
+Each tuple becomes its own separate test case with an auto-generated name showing the actual parameter values: `[-10-20-5-None]`, `[10--20-5-None]`, etc. If one case fails, the others still run independently. Prefer `parametrize` when test logic is truly identical across cases; use separate functions when each case has meaningfully different setup or assertions.
+
+---
+
+## 156 — `pytest.raises()` — testing that exceptions are raised
+
+```python
+def test_calculate_calories_negative_protein_raises():
+    with pytest.raises(InvalidMacroError):
+        calculate_calories(protein_g=-10, carbs_g=20, fat_g=5)
+```
+
+The `with pytest.raises(SomeException):` block passes if and only if the code inside raises exactly that exception type. If the code runs without raising → test FAILS (expected exception didn't happen). If it raises a different exception → test also FAILS.
+
+Used throughout Phase 7 to test that:
+- `@validate_macros` raises `InvalidMacroError` for negative macro values
+- `FoodEntryRepository.delete()` raises `FoodNotFoundError` when user 2 tries to delete user 1's entry (IDOR prevention proven)
+
+---
+
+## 157 — Integration tests — transactional fixture for database isolation
+
+The core problem: tests must be completely isolated (one test's data shouldn't affect another's), and they must leave no junk data behind in the database after running.
+
+**The solution — wrap every test in a database transaction, then roll it back after the test completes:**
+
+```python
+@pytest.fixture(scope="session")
+def db_engine():
+    engine = create_engine(settings.database_url)
+    Base.metadata.create_all(engine)
+    yield engine
+    engine.dispose()
+
+@pytest.fixture
+def db_session(db_engine):
+    connection = db_engine.connect()
+    transaction = connection.begin()    # explicit outer transaction
+    Session = sessionmaker(bind=connection)
+    session = Session()
+
+    yield session                        # test runs, can flush/query — but never commits
+
+    session.close()
+    transaction.rollback()               # everything discarded — as if the test never happened
+    connection.close()
+```
+
+**Why `transaction.rollback()` and not `session.rollback()`:** the session is nested *inside* the explicitly-started connection-level transaction. `session.rollback()` only rolls back SQLAlchemy's inner view — the outer `transaction` you started with `connection.begin()` is still open, and closing the connection without explicitly rolling it back could auto-commit depending on the driver. `transaction.rollback()` discards everything at the level you explicitly started it.
+
+**Why repositories never call `session.commit()`:** repositories call only `session.flush()` (sends SQL to DB, assigns IDs, stays within the open transaction). The *caller* decides when to commit. In production, `get_db_session()` commits after a successful endpoint request. In tests, no commit ever happens — `transaction.rollback()` fires instead. This architectural decision (repositories flush only, never commit) is what makes the transactional test fixture work cleanly.
+
+**The "insert happens but never commits" sequence:**
+
+```
+session.flush()   → row EXISTS within the transaction → visible to THIS session ✅
+                  → NOT visible to other connections
+session.commit()  → row PERMANENT → visible to ALL connections (never called in tests)
+transaction.rollback() → row DISCARDED → visible to NO ONE ✅
+```
+
+`food.id` is a real integer after `flush()` (the database sequence assigned it), but after `rollback()`, the row is gone — the sequence value is "used up" (PostgreSQL sequences don't roll back) but the data itself doesn't exist.
+
+---
+
+## 158 — Session vs transaction — the distinction
+
+**Session** — SQLAlchemy's unit-of-work workspace. Tracks which Python objects correspond to which database rows (the "identity map"), accumulates changes in memory, knows how to `flush`/`commit`/`rollback`.
+
+**Transaction** — a database-level guarantee. A group of SQL statements that either all succeed together or all fail together (ACID atomicity). Rolling back discards all statements in the current transaction.
+
+A SQLAlchemy session *always* operates within a transaction, whether you think about it or not. `flush()` sends SQL within the current transaction (open). `commit()` closes and commits the transaction (makes it permanent), starts a new one. `rollback()` closes and discards the transaction.
+
+**Why `get_session()` (production) uses implicit transaction management:**
+
+```python
+@contextmanager
+def get_session():
+    session = SessionLocal()
+    try:
+        yield session
+        session.commit()   # ← session owns its transaction, commits are the goal
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+```
+
+Session created → SQLAlchemy implicitly begins a transaction → `session.commit()` makes everything permanent. `session.rollback()` correctly rolls back everything because the session owns its own transaction from start to finish.
+
+**Why test fixture uses explicit `connection.begin()`:**
+
+The test fixture explicitly creates a transaction *before* the session, then binds the session to that connection. The session is a guest inside the outer transaction — `session.rollback()` only affects the inner layer. `transaction.rollback()` is needed to roll back the outer one. This provides the stronger guarantee that no data persists regardless of SQLAlchemy's internal session-transaction bookkeeping.
+
+**Why production `get_session()` doesn't use explicit transactions:** production code *wants* commits — data persistence is the whole point. Explicit `connection.begin()` + `transaction.rollback()` would prevent data from ever being saved. The implicit session transaction is appropriate precisely because it commits normally when everything succeeds.
+
+---
+
+## 159 — Context managers — `@contextmanager` and `with` statement
+
+A context manager guarantees cleanup code always runs, regardless of how the code block exits — whether it returns normally, returns early, or raises an exception.
+
+```python
+# ❌ fragile — if anything raises, close() never runs, connection leaks
+session = SessionLocal()
+do_something(session)   # what if this raises?
+session.close()          # never reached
+
+# ✅ guaranteed — session.close() always runs
+with get_session() as session:
+    do_something(session)   # raises? doesn't matter
+# session.close() always fires here
+```
+
+Python's `with` statement calls two special methods:
+- `__enter__` — runs on entry, returns the value bound to `as session`
+- `__exit__` — runs on exit, *always*, whether the block succeeded or raised
+
+`@contextmanager` is a convenience decorator that lets you write a context manager as a generator (with `yield`) rather than defining a class with `__enter__`/`__exit__` explicitly:
+
+```python
+@contextmanager
+def get_session():
+    session = SessionLocal()
+    try:
+        yield session          # ← __enter__ equivalent: everything before yield
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()        # ← __exit__ equivalent: everything in finally
+```
+
+Common production uses: database sessions (always close), file handles (`with open(...)`), locks (always release), temporary directories (always delete). The common thread — a resource that *must* be released, where forgetting the release step is easy but catastrophic.
+
+---
+
+## 160 — `raise err` vs bare `raise` — traceback preservation
+
+```python
+# ❌ raise err — resets the traceback to this line, losing original location
+except Exception as err:
+    session.rollback()
+    raise err   # traceback points to THIS line, not where the error originally occurred
+
+# ✅ bare raise — re-raises the ORIGINAL exception with its ORIGINAL traceback
+except Exception:
+    session.rollback()
+    raise       # traceback shows where the error actually happened
+```
+
+Bare `raise` (no argument) re-raises the current exception object with its full original traceback intact, so you see exactly where in your application code the error first occurred. `raise err` treats it as a new raise at that line, losing that information. Always prefer bare `raise` in exception handlers that re-raise.
+
+---
+
+## 161 — FastAPI `TestClient` and dependency overrides
+
+`TestClient` (from Starlette) runs the full FastAPI request/response cycle — routing, middleware, dependency injection, exception handlers, Pydantic validation — all in memory, without starting a real server:
+
+```python
+from fastapi.testclient import TestClient
+from nutritrack.api.main import app
+
+client = TestClient(app)
+response = client.get("/foods/99999")
+assert response.status_code == 404
+```
+
+**Dependency overrides — replacing `Depends()` functions for tests:**
+
+```python
+from nutritrack.api.dependencies import get_current_user, get_db_session
+
+def override_get_current_user():
+    return UserModel(id=test_user.id, email="fixture_user@test.com", ...)
+
+def override_get_db_session():
+    yield db_session   # use the test's rolled-back session instead
+
+app.dependency_overrides[get_current_user] = override_get_current_user
+app.dependency_overrides[get_db_session] = override_get_db_session
+
+# after tests:
+app.dependency_overrides.clear()   # MUST clear — app is a singleton, overrides persist
+```
+
+`app.dependency_overrides` is a plain Python dict on the module-level singleton `app`. FastAPI checks it per request: "is this dependency in the override dict? if yes, call the override instead." Overrides only activate when a dependency is actually *requested* by an endpoint — an endpoint that never declares `Depends(get_current_user)` (like register/login) is completely unaffected by overriding it.
+
+**Why the `client` fixture creates a real user in the database:**
+
+The fake `override_get_current_user` returns a `UserModel` object — but endpoints that insert `food_entries` with `user_id=test_user.id` need that user to actually exist in the database (FK constraint). A made-up `id=99999` fails with `ForeignKeyViolation` when the endpoint tries to insert. Solution: create a real user via the repository inside the fixture, then return that user from the override. The user gets rolled back with everything else at the end of the test.
+
+**The `id=99999` vs real-user tradeoff discovered during testing:**
+
+Using a non-existent fake ID (`id=99999`) works for tests that *read* data (returning empty results is fine) but breaks tests that *write* data (FK constraints require the user to exist). Using a real created user satisfies both requirements — exists for FK constraints, and has no attached data (just created, clean state).
+
+---
+
+## 162 — Mocking external services with `unittest.mock`
+
+Mocking replaces a real function with a fake that returns a predetermined response instantly, without making any real external calls. Essential for testing code that calls the Anthropic API — real calls cost money, take seconds, require internet, and produce non-deterministic results.
+
+**`patch()` as a context manager:**
+
+```python
+from unittest.mock import patch, AsyncMock
+
+with patch(
+    "nutritrack.api.routers.logs.parse_natural_language_meal",
+    new_callable=AsyncMock,
+    return_value=[{"food_name": "chicken breast", "weight_g": 150.0, ...}],
+):
+    response = client.post("/log/natural", json={...})
+    assert response.status_code == 201
+```
+
+**Patch WHERE the function is used, not WHERE it is defined:**
+
+`parse_natural_language_meal` is *defined* in `nutritrack.ai.client`, but *imported and used* in `nutritrack.api.routers.logs`. Patch the usage location — `"nutritrack.api.routers.logs.parse_natural_language_meal"`. If you patched the definition location instead, the router would still hold its own reference to the original function and the patch would have no effect.
+
+**`new_callable=AsyncMock` for async functions:**
+
+`parse_natural_language_meal` is `async`. Regular `Mock` objects aren't awaitable — calling `await mock()` raises `TypeError`. `AsyncMock` is specifically designed for async functions, automatically awaitable, returning `return_value` when awaited.
+
+**`side_effect` vs `return_value`:**
+
+```python
+# return_value — mock returns this value when called
+return_value=[{"food_name": "chicken", ...}]   # simulates successful AI response
+
+# side_effect — mock RAISES this exception when called
+side_effect=AIServiceError("service unavailable")   # simulates AI failure
+
+# note: side_effect (lowercase 'e') — Python is case-sensitive
+# side_Effect = ... ← wrong: sets an irrelevant attribute, mock not actually configured
+```
+
+**Stacked `@patch` decorators — parameter order:**
+
+```python
+@patch("module.function_b")   # outer decorator → SECOND parameter
+@patch("module.function_a")   # inner decorator → FIRST parameter
+def test_something(mock_a, mock_b):
+    ...
+```
+
+Bottom decorator (innermost) maps to the first parameter. Top (outermost) maps to the second. This ordering is a common source of bugs — always double-check when stacking patches.
+
+**`ExitStack` for multiple patches without nesting:**
+
+```python
+from contextlib import ExitStack
+
+def test_something(client):
+    with ExitStack() as stack:
+        stack.enter_context(patch("module.function_a", new_callable=AsyncMock, return_value=...))
+        stack.enter_context(patch("module.function_b", new_callable=AsyncMock, side_effect=SomeError()))
+        response = client.post(...)
+```
+
+Each patch entered cleanly on its own line, no matter how many — avoids deeply nested `with patch(): with patch():` blocks.
+
+---
+
+## 163 — Coverage reports with `pytest-cov`
+
+```bash
+pytest --cov=nutritrack --cov-report=term-missing
+```
+
+`--cov=nutritrack` — measure coverage only for the `nutritrack/` package (not tests themselves, not third-party libraries). `--cov-report=term-missing` — show which specific line numbers are NOT covered, not just a summary percentage.
+
+**Reading the report:**
+
+```
+Name                          Stmts  Miss  Cover  Missing
+---------------------------------------------------------
+nutritrack/core/parsers.py      44     4    91%   16-19
+```
+
+`Stmts` — total executable statements. `Miss` — statements never executed by any test. `Cover` — percentage executed. `Missing` — specific line numbers not covered.
+
+**NutriTrack's 60% baseline — what it means:**
+
+High-coverage areas (genuinely well-tested):
+- `db/models.py` 100%, `db/schemas.py` 99% — every model/schema exercised through endpoint tests
+- `core/parsers.py` 91%, `core/models.py` 90% — computation layer well-tested
+- `api/routers/auth.py` 94% — auth flow nearly complete
+
+Expected 0% areas (appropriate, not failures):
+- `admin/` — Flask admin intentionally excluded from Phase 7 testing scope
+- `worker/` — Celery tasks require a different, more complex testing setup
+- `db/seed.py` — one-time data seeding script, not worth testing
+
+**Chasing 100% coverage is often counterproductive** — it leads to testing Python's own behavior rather than your application logic. The more useful question is: *are the highest-risk, most critical parts covered?* For NutriTrack: core computation, IDOR security, auth flow, and exception handlers are all well-covered — exactly the right priorities.
+
+---
+
+## 164 — IDOR prevention — security property proven by integration test
+
+IDOR (Insecure Direct Object Reference) — a vulnerability where an attacker accesses or modifies resources they don't own by guessing/incrementing an identifier in the URL. `DELETE /log/6` attempted by a user who owns entry 7 — without ownership validation, entry 6 (belonging to someone else) gets deleted.
+
+**The fix — make ownership part of the same database query:**
+
+```python
+def delete(self, entry_id: int, user_id: int) -> None:
+    entry = (
+        self.session.query(FoodEntryModel)
+        .filter(FoodEntryModel.id == entry_id)
+        .filter(FoodEntryModel.user_id == user_id)   # both conditions, one query
+        .first()
+    )
+    if not entry:
+        raise FoodNotFoundError(str(entry_id))
+    self.session.delete(entry)
+```
+
+"Entry 6 exists but belongs to user B" produces exactly the same result as "entry 6 doesn't exist at all" — both return nothing from the query, both raise `FoodNotFoundError`, both produce a 404 response. The attacker gets no signal that entry 6 exists, removing their ability to use the endpoint as a probe.
+
+**Why this required an integration test to prove** — the security property cannot be verified with in-memory dataclasses. It requires:
+- A real database row owned by user 1
+- A real query that runs with user 2's ID
+- A real FK relationship between `food_entries.user_id` and `users.id`
+- A real assertion that `FoodNotFoundError` was raised
+
+The `test_delete_other_users_entry_raises` test provides permanent, automated proof that this property holds at the database-query level, not just in theory.
+
+---
+
+## 165 — Singletons in testing — `app` and `dependency_overrides`
+
+A singleton is an object that exists as exactly one instance for the entire lifetime of the program — every part of the code that references it gets the same object.
+
+```python
+# module-level — created once when Python first imports this file
+app = FastAPI(...)   # ← this IS the singleton
+
+# anywhere else in the codebase:
+from nutritrack.api.main import app   # ← always the SAME object, not a new one
+```
+
+**The testing consequence:** modifying `app.dependency_overrides` in one place modifies it everywhere, since there's only one `app`. This is why `app.dependency_overrides.clear()` in the `client` fixture's teardown (after `yield`) is essential — without clearing overrides after each test, the fake implementations leak into subsequent tests permanently.
+
+**The naming collision to be aware of:** `scope="session"` in pytest means "live for the entire test run" — nothing to do with SQLAlchemy sessions. `db_session` is a SQLAlchemy concept — nothing to do with pytest's scope system. Two completely different systems that happen to share the word "session."
+
+---
+
+## 166 — Phase 7 test suite summary
+
+```
+tests/
+├── conftest.py              ← shared fixtures: sample_food, sample_food2,
+│                               sample_food_entry, sample_food_entries,
+│                               sample_macro_goal, multi_day_food_entries,
+│                               db_engine, db_session, client, registered_user
+├── test_core_models.py      ← FoodEntry.scaled_calories(), scaled_protein()
+├── test_daily_totals.py     ← get_daily_totals() grouping, entry counts, empty list
+├── test_parsers.py          ← MacroAggregator totals, remaining macros, top_foods, entry_count
+├── test_utils.py            ← calculate_calories, fiber behavior, negative macro validation
+├── test_repositories.py     ← food creation, IDOR-safe delete (two cases)
+├── test_endpoints.py        ← register, login, POST /log/natural with mocked AI
+└── test_exception_handlers.py ← FoodNotFoundError→404, GoalNotSetError→404, AIServiceError→503
+```
+
+32 tests total, 2.31 seconds. Breakdown by type:
+- 23 unit tests (no database) — run in ~0.07s
+- 6 integration tests (real database, transactional rollback) — ~1.0s
+- 3 endpoint tests (TestClient, dependency overrides, AI mocked) — ~0.67s
+- 3 exception handler tests (fast — mostly "DB finds nothing" results) — ~0.15s
+
+Coverage: 60% overall. Core computation layer 90%+. Auth, routers, repositories 70-94%. Flask admin, Celery worker, seed data intentionally at 0% (out of scope for Phase 7).
+
+---
+
+## 167 — Small Q&As — Phase 7 testing discussions
+
+**"Why did we use `Optional[float] = None` instead of `fiber_g: float = None` for `calculate_calories`?"**
+At runtime, both are identical — Python never enforces type hints during execution, and `(fiber_g or 0.0)` handles `None` and `0.0` the same way. The distinction matters only for mypy: `fiber_g: float = None` tells mypy "this is always a float" but then gives it `None` as the default — a direct contradiction that mypy flags as `Incompatible default for argument`. `Optional[float]` (shorthand for `Union[float, None]`) correctly communicates "this can be either a float or None," satisfying both mypy's type-checking and the caller's ability to omit the argument. Design-wise, using `None` as the default is better even when it doesn't functionally matter for a specific function — it's a codebase-wide convention signal that "omitting this value is meaningfully different from providing zero," even if this one function treats them the same.
+
+**"Is `fiber_g: float = None` different from `fiber_g: Optional[float] = None`?"**
+Identical at runtime. Different for mypy — the first is a type annotation error (None isn't a float), the second is correct (Optional explicitly includes None as a valid value). mypy will flag the first with `error: Incompatible default for argument "fiber_g"` and accept the second silently.
+
+**"Why not test with `pytest.approx()` for floating-point comparisons?"**
+`MacroAggregator` was updated to `round()` its accumulated totals to 2 decimal places before storing them, making the stored values exactly representable — `==` assertions work without tolerance. `pytest.approx()` is the correct tool when comparing raw floating-point arithmetic results that haven't been rounded, where tiny imprecision (e.g. `0.30000000000000004` instead of `0.3`) would cause `==` to fail spuriously. Since `MacroAggregator` pre-rounds its properties, and `remaining_macros()` also rounds its return values, exact `==` comparisons are reliable here.
+
+**"Why did the repository tests fail with `UniqueViolation` when running the full suite?"**
+`test_register` (endpoint test) and `test_delete_own_entry_succeeds` (repository test) were both using `test@gmail.com`. The real cause turned out to be pre-existing data in the development database (a real user with that email from earlier manual testing), not a rollback failure between tests. Fix: always use obviously-fake, test-specific email domains (`@test.com`, `@example.com`, `@pytest.local`) that can never exist in your real dev database. Verified by switching to `test@example.com` — both tests passing with the same email confirmed the transactional rollback is working correctly between test functions.
+
+**"Will the user created inside the `client` fixture persist in the database permanently?"**
+No — the `client` fixture depends on `db_session` which is `scope="function"` (fresh per test). The user is created via `session.flush()` (within the open transaction), satisfies FK constraints during the test, then gets discarded by `transaction.rollback()` at the end of `db_session`'s teardown — along with everything else the test created.
+
+**"Why did using `id=99999` for the fake user break `test_log_natural_meal` but work for other tests?"**
+Tests that only *read* data (returning empty results when nothing matches `user_id=99999`) work fine with a non-existent ID. Tests that *write* data fail with `ForeignKeyViolation` — PostgreSQL enforces the FK constraint `food_entries.user_id → users.id`, so inserting a `food_entry` with `user_id=99999` fails if no `users` row with that ID exists. Solution: create a real user inside the `client` fixture and return that real user object from `override_get_current_user`, satisfying FK constraints for write operations while keeping the test state fully isolated via transaction rollback.
+
+**"What's the difference between `scope='session'` (pytest) and `db_session` (SQLAlchemy)?"**
+Completely unrelated concepts that happen to share the word "session." `scope="session"` in pytest means "this fixture lives for the entire test run, created once, shared by all tests." `db_session` is a SQLAlchemy session — a unit-of-work workspace for communicating with the database. `db_engine` uses `scope="session"` (pytest) because creating a connection pool is expensive and has no per-test state. `db_session` (SQLAlchemy) uses the default `scope="function"` (pytest) because each test needs its own fresh transaction.
+
+**"Why patch WHERE a function is used rather than WHERE it is defined?"**
+When you `from nutritrack.ai.client import parse_natural_language_meal` in `logs.py`, the name `parse_natural_language_meal` in `logs.py` gets its own reference to the function. Patching the definition location (`nutritrack.ai.client.parse_natural_language_meal`) only replaces it there — `logs.py` still holds its own imported reference to the original. Patching the usage location (`nutritrack.api.routers.logs.parse_natural_language_meal`) replaces the name in the module that actually calls it, so the router gets the mock when it calls the function.
+
+**"What is a singleton?"**
+An object that exists as exactly one instance for the entire lifetime of the program. Every import of `app` from `nutritrack.api.main` returns the same object — not a fresh copy. Relevant for testing because `app.dependency_overrides` is a dict on that one shared object — modifying it in one place affects all tests, which is why `dependency_overrides.clear()` in fixture teardown is non-negotiable.
+
+**"What's the practical significance of 60% coverage?"**
+It means 60% of your application's executable statements are exercised by at least one test. More useful than the number: the *right* things are covered — core computation (90%+), IDOR security (proven), auth flow (94%), exception handlers (proven). The 0% areas (Flask admin, Celery worker, seed script) are intentionally excluded, not forgotten. Chasing 100% often produces tests that verify Python's own behavior rather than your application's — the highest-value testing targets are the highest-risk, most complex behaviors, not total line count.
+
+---
+
 ## Quick mental model
 
 Think of variables as _sticky notes_ attached to objects. Reassigning moves the sticky note to a new object. Mutating changes the object itself — all sticky notes pointing to it see the change.
