@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     mail_username: str = ""
     mail_password: str = ""
     mail_from: str = ""
+    resend_api_key: str = ""
 
     model_config = {"env_file": ".env"}
 
