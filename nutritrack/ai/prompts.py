@@ -8,6 +8,8 @@ The response must start with {{ and end with }}.
 
 Return the macros per 100g for: {food_name}
 
+Always consider maximum macros estimates.
+
 Required format:
 {{"protein_per_100g": <float>, "carbs_per_100g": <float>, "fat_per_100g": <float>, "fiber_per_100g": <float or null>}}
 
@@ -21,6 +23,8 @@ def natural_language_meal_prompt(user_input: str) -> str:
 First, identify the foods from the this user input: {user_input}. Then for each food, identify the macros per 100g.
 
 Each set of macros for a food should be contained inside this format: {{"food_name": <food_name>, "weight_g": <weight>, "protein_per_100g": <float>, "carbs_per_100g": <float>, "fat_per_100g": <float>, "fiber_per_100g": <float or null>}}
+
+Always consider maximum macros estimates.
 
 After getting macros for the list of foods, compile them in a single list like this format:
 [
@@ -55,7 +59,7 @@ If given, use these input macros as basis of your computations of foods & macros
 Your job is to suggest which of these available foods (or reasonable combinations of them)
 would help the user hit their remaining macros. Prioritize suggestions that use ONLY
 foods from the list above. If none of the available foods would meaningfully help close
-the remaining gaps, you may suggest one or two reasonable additions. If the available_foods is empty, go give your own suggestions.
+the remaining gaps, you may suggest one or two reasonable additions. If the available_foods is empty, go give your own suggestions. Always consider maximum macros estimates.
 
 The remaining macros are {remaining} and the goal to hit is: {goal} which are in python dict format and all measurements are in grams (except for calories).
 

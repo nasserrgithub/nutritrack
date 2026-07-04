@@ -110,6 +110,9 @@ def calculate_calories(
     Protein: 4 kcal/g, Carbs: 4 kcal/g, Fat: 9 kcal/g.
     Fiber is subtracted from carbs if provided (net carbs).
     """
+    fiber_g = (
+        0  # TODO: Need to investigate more, temporarily set to 0 for maximum estimates
+    )
     net_carbs = carbs_g - (fiber_g or 0.0)
     return (protein_g * 4) + (net_carbs * 4) + (fat_g * 9)
 
