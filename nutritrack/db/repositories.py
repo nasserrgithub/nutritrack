@@ -1,6 +1,6 @@
 from typing import Optional
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
+from sqlalchemy import desc, func
 from datetime import date
 from nutritrack.db.models import (
     FoodModel,
@@ -54,7 +54,7 @@ class FoodRepository:
     def get_by_name(self, name: str) -> Optional[FoodModel]:
         return (
             self.session.query(FoodModel)
-            .filter(FoodModel.name.ilike(f"%{name}%"))
+            .filter(func.lower(FoodModel.name) == name.lower())
             .first()
         )
 
