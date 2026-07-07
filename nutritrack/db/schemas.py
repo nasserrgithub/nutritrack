@@ -170,3 +170,13 @@ class WeightEntryResponse(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class CustomMacrosLog(BaseModel):
+    food_name: str = Field(..., min_length=1)
+    weight_g: float = Field(..., gt=0)
+    protein_g: float = Field(..., ge=0)
+    carbs_g: float = Field(..., ge=0)
+    fat_g: float = Field(..., ge=0)
+    meal_slot: str = Field(default="unspecified")
+    logged_date: date = Field(default_factory=date.today)

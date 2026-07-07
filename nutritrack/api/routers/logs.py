@@ -10,6 +10,7 @@ from nutritrack.db.schemas import (
     FoodEntryCreate,
     FoodEntryResponse,
     NaturalMealLog,
+    CustomMacrosLog,
 )
 from nutritrack.db.models import UserModel, FoodEntryModel
 from nutritrack.ai.client import (
@@ -137,3 +138,41 @@ def delete_food_entry(
 ) -> None:
     repo = FoodEntryRepository(session)
     repo.delete(entry_id, user.id)
+
+
+@router.post(
+    "/macros", response_model=FoodEntryResponse, status_code=status.HTTP_201_CREATED
+)
+def log_custom_macros(
+    custom_macros_log: CustomMacrosLog,
+    user: UserModel = Depends(get_current_user),
+    session: Session = Depends(get_db_session),
+) -> FoodEntryResponse:
+    food_repo = FoodRepository(session)
+
+    # back-calculate per-100g values from the user's total serving values
+    weight = custom_macros_log.weight_g
+    protein_per_100g = round(custom_macros_log.protein_g / weight * 100, 2)
+    carbs_per_100g = round(custom_macros_log.carbs_g / weight * 100, 2)
+    fat_per_100g = round(custom_macros_log.fat_g / weight * 100, 2)
+
+    food = food_repo.get_by_name(custom_macros_log.food_name)
+    if not food:
+        food = food_repo.create(
+            name=custom_macros_log.food_name,
+            protein_per_100g=protein_per_100g,
+            carbs_per_100g=carbs_per_100g,
+            fat_per_100g=fat_per_100g,
+            source="custom",
+        )
+
+    food_entry_repo = FoodEntryRepository(session)
+    food_entry = food_entry_repo.create(
+        user_id=user.id,
+        food_id=food.id,
+        weight_g=custom_macros_log.weight_g,
+        logged_date=custom_macros_log.logged_date,
+        meal_slot=custom_macros_log.meal_slot,
+    )
+
+    return build_entry_response(food_entry)
