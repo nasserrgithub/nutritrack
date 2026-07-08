@@ -5,7 +5,7 @@ from functools import lru_cache
 class Settings(BaseSettings):
     database_url: str = ""
     secret_key: str = "changeme-in-production"
-    access_token_expire_minutes: int = 60 * 24
+    access_token_expire_minutes: int = 60 * 168
     environment: str = "development"
     anthropic_api_key: str = ""
     redis_url: str = "redis://localhost:6379/0"
