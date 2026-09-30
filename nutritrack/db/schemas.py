@@ -145,7 +145,12 @@ class NaturalMealLog(BaseModel):
 
 
 class SuggestionRequest(BaseModel):
-    available_foods: str = Field(...)
+    preference: str = Field(default="", max_length=200)
+
+
+class SuggestionIngredient(BaseModel):
+    name: str
+    weight_g: float
 
 
 class SuggestionResponse(BaseModel):
@@ -155,6 +160,7 @@ class SuggestionResponse(BaseModel):
     protein_g: float
     carbs_g: float
     fat_g: float
+    ingredients: list[SuggestionIngredient] = []
 
 
 class WeightEntryCreate(BaseModel):

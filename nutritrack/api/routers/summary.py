@@ -8,17 +8,12 @@ from nutritrack.db.schemas import (
     SuggestionRequest,
     SuggestionResponse,
 )
-from nutritrack.db.repositories import (
-    FoodEntryRepository,
-    MacroGoalRepository,
-    FoodRepository,
-)
+from nutritrack.db.repositories import FoodEntryRepository, MacroGoalRepository
 from nutritrack.api.dependencies import get_current_user, get_db_session
 from nutritrack.core.models import FoodEntry, Food, MacroGoal
 from nutritrack.core.parsers import MacroAggregator
 from nutritrack.core.logger import get_logger
-from nutritrack.core.exceptions import FoodNotFoundError
-from nutritrack.ai.client import lookup_food_macros, get_food_suggestions
+from nutritrack.ai.client import get_food_suggestions
 
 logger = get_logger(__name__)
 router = APIRouter()
@@ -111,46 +106,8 @@ async def get_daily_suggestions(
     macro_aggregator = MacroAggregator(food_entries=food_entries, macro_goal=macro_goal)
     remaining = macro_aggregator.remaining_macros()
 
-    # Food lookup (both in DB and via AI)
-    food_repo = FoodRepository(session)
-    available_foods = [
-        food.strip()
-        for food in suggestion_data.available_foods.split(",")
-        if food.strip()
-    ]
-    available_foods_macros = []
-
-    if (
-        available_foods
-    ):  # Check 0th element if not an empty string. If so, we skip the lookup and let AI service decide for the suggested foods
-        for available_food in available_foods:
-            food = food_repo.get_by_name(available_food)
-
-            if not food:
-                try:
-                    ai_lookup = await lookup_food_macros(available_food)
-                except FoodNotFoundError:
-                    logger.info(
-                        f"Skipping unrecognized food in suggestions input: {available_food}"
-                    )
-                    continue  # skip this one, keep processing the rest
-                food = food_repo.create(
-                    name=available_food,
-                    protein_per_100g=ai_lookup["protein_per_100g"],
-                    carbs_per_100g=ai_lookup["carbs_per_100g"],
-                    fat_per_100g=ai_lookup["fat_per_100g"],
-                    fiber_per_100g=ai_lookup["fiber_per_100g"],
-                    source="ai_lookup",
-                )
-
-            available_foods_macros.append(
-                {
-                    "name": food.name,
-                    "protein_per_100g": food.protein_per_100g,
-                    "carbs_per_100g": food.carbs_per_100g,
-                    "fat_per_100g": food.fat_per_100g,
-                }
-            )
+    # Normalize preference: blank or whitespace-only means "no preference"
+    preference = (suggestion_data.preference or "").strip() or None
 
     foods = await get_food_suggestions(
         remaining,
@@ -160,7 +117,7 @@ async def get_daily_suggestions(
             "carbs_g": macro_goal.carbs_g,
             "fat_g": macro_goal.fat_g,
         },
-        available_foods_macros,
+        preference=preference,
     )
 
     return [SuggestionResponse.model_validate(food) for food in foods]

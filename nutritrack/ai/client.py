@@ -78,7 +78,7 @@ async def parse_natural_language_meal(user_input: str) -> list[dict]:
         if not isinstance(block, TextBlock):
             raise AIServiceError(f"Unexpected response block type: {type(block)}")
         text = _strip_markdown_fences(block.text)
-        print(f"DEBUG raw text: {repr(text)}")
+        logger.debug(f"Raw natural language meal response: {text!r}")
         result = json.loads(text)
 
         if not result:
@@ -97,25 +97,27 @@ async def parse_natural_language_meal(user_input: str) -> list[dict]:
     except FoodNotFoundError:
         raise
     except Exception as exc:
-        import traceback
-
-        traceback.print_exc()
+        logger.exception("Natural language meal parsing failed")
         raise AIServiceError(str(exc))
 
 
 async def get_food_suggestions(
-    remaining: dict, goal: dict, available_foods_macros: list[dict]
+    remaining: dict,
+    goal: dict,
+    preference: str | None = None,
 ) -> list[dict]:
     client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
     try:
         response = await client.messages.create(
             model="claude-sonnet-4-6",
-            max_tokens=2048,
+            max_tokens=4096,
             messages=[
                 {
                     "role": "user",
                     "content": daily_suggestions_prompt(
-                        remaining, goal, available_foods_macros
+                        remaining,
+                        goal,
+                        preference=preference,
                     ),
                 }
             ],
@@ -126,10 +128,12 @@ async def get_food_suggestions(
         text = _strip_markdown_fences(block.text)
         result = json.loads(text)
 
-        if not result:
-            raise AIServiceError("No food suggestions/results returned")
-
-        logger.info("Done fetching food suggestions")
+        # An empty list is a valid answer: the prompt returns [] when the
+        # remaining macros are already met, and the frontend handles it.
+        logger.info(
+            f"Done fetching food suggestions "
+            f"({len(result)} returned, preference={preference!r})"
+        )
         for food in result:
             logger.info(
                 f"food_name: {food['food_name']} "
