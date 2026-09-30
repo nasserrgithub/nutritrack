@@ -57,12 +57,14 @@ class UserCreate(BaseModel):
 class UserResponse(BaseModel):
     id: int
     email: str
-    weight_kg: float
-    height_cm: float
-    age: int
-    gender: str
+    weight_kg: Optional[float] = None
+    height_cm: Optional[float] = None
+    age: Optional[int] = None
+    gender: Optional[str] = None
     activity_level: str
     is_active: bool
+    google_id: Optional[str] = None
+    profile_complete: bool
     created_at: datetime
 
     model_config = {"from_attributes": True}

@@ -172,3 +172,10 @@ def login(
     user_id = existing.id
     access_token = create_access_token(user_id)
     return TokenResponse(access_token=access_token)
+
+
+@router.get("/me", response_model=UserResponse)
+def get_me(
+    user: UserModel = Depends(get_current_user),
+) -> UserResponse:
+    return UserResponse.model_validate(user)
