@@ -9,22 +9,28 @@ class UserModel(Base):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    email: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
-    hashed_password: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)  
-    google_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, unique=True)  
-    avatar_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True) 
-    profile_complete: Mapped[bool] = mapped_column(Boolean, default=False) 
-    weight_kg: Mapped[Optional[float]] = mapped_column(Float, nullable=True) 
-    height_cm: Mapped[Optional[float]] = mapped_column(Float, nullable=True) 
-    age: Mapped[Optional[int]] = mapped_column(Integer, nullable=True) 
-    gender: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)  
+    email: Mapped[str] = mapped_column(
+        String(255), nullable=False, unique=True, index=True
+    )
+    hashed_password: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    google_id: Mapped[Optional[str]] = mapped_column(
+        String(255), nullable=True, unique=True
+    )
+    avatar_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    profile_complete: Mapped[bool] = mapped_column(Boolean, default=False)
+    weight_kg: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    height_cm: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    age: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    gender: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
     activity_level: Mapped[str] = mapped_column(String(20), default="sedentary")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     food_entries: Mapped[list["FoodEntryModel"]] = relationship(back_populates="user")
     macro_goals: Mapped[list["MacroGoalModel"]] = relationship(back_populates="user")
-    weight_entries: Mapped[list["WeightEntryModel"]] = relationship(back_populates="user")
+    weight_entries: Mapped[list["WeightEntryModel"]] = relationship(
+        back_populates="user"
+    )
 
 
 class FoodModel(Base):

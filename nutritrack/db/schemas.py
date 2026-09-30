@@ -188,6 +188,7 @@ class ProfileComplete(BaseModel):
     age: int = Field(..., gt=0)
     gender: str = Field(..., pattern="^(male|female|other)$")
 
+
 class GoogleAuthResponse(BaseModel):
     access_token: str
     profile_complete: bool

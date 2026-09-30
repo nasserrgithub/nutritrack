@@ -138,15 +138,10 @@ class UserRepository:
         logger.info(f"New Google user registered: {email}")
         return user
 
-    def complete_profile(
-        self,
-        user_id: int,
-        weight_kg: float,
-        height_cm: float,
-        age: int,
-        gender: str,
-    ) -> UserModel:
+    def complete_profile(self, user_id, weight_kg, height_cm, age, gender) -> UserModel:
         user = self.session.get(UserModel, user_id)
+        if not user:
+            raise ValueError(f"User {user_id} not found")
         user.weight_kg = weight_kg
         user.height_cm = height_cm
         user.age = age
@@ -260,8 +255,8 @@ class MacroGoalRepository:
             self.session.query(MacroGoalModel)
             .filter(MacroGoalModel.user_id == user_id)
             .filter(MacroGoalModel.effective_date <= as_of_date)
-            .order_by(desc(MacroGoalModel.effective_date))
-            .order_by(desc(MacroGoalModel.id))
+            .order_by(desc(MacroGoalModel.effective_date))  # type: ignore[arg-type]
+            .order_by(desc(MacroGoalModel.id))  # type: ignore[arg-type]
             .first()
         )
 

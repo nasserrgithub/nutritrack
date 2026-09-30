@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     mail_password: str = ""
     mail_from: str = ""
     resend_api_key: str = ""
-    allowed_origins: str = "http://localhost:5173" 
+    allowed_origins: str = "http://localhost:5173"
     google_client_id: str = ""
     google_client_secret: str = ""
     google_redirect_uri: str = "http://localhost:8000/auth/google/callback"

@@ -78,7 +78,7 @@ async def parse_natural_language_meal(user_input: str) -> list[dict]:
         if not isinstance(block, TextBlock):
             raise AIServiceError(f"Unexpected response block type: {type(block)}")
         text = _strip_markdown_fences(block.text)
-        print(f"DEBUG raw text: {repr(text)}") 
+        print(f"DEBUG raw text: {repr(text)}")
         result = json.loads(text)
 
         if not result:
@@ -98,6 +98,7 @@ async def parse_natural_language_meal(user_input: str) -> list[dict]:
         raise
     except Exception as exc:
         import traceback
+
         traceback.print_exc()
         raise AIServiceError(str(exc))
 

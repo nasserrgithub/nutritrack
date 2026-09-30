@@ -24,6 +24,7 @@ logger = get_logger(__name__)
 
 settings = get_settings()
 
+
 # App setup
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -45,6 +46,7 @@ app = FastAPI(
 
 # Middlewares
 app.add_middleware(SessionMiddleware, secret_key=settings.session_secret_key)
+
 
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
     async def dispatch(

@@ -12,13 +12,19 @@ from nutritrack.api.auth_utils import (
     verify_password,
 )
 from nutritrack.db.repositories import UserRepository
-from nutritrack.db.schemas import UserCreate, UserResponse, LoginRequest, TokenResponse, ProfileComplete
+from nutritrack.db.schemas import (
+    UserCreate,
+    UserResponse,
+    LoginRequest,
+    TokenResponse,
+    ProfileComplete,
+)
+from nutritrack.db.models import UserModel
 
 from nutritrack.core.logger import get_logger
 
 logger = get_logger(__name__)
 router = APIRouter()
-
 
 
 settings = get_settings()
@@ -151,6 +157,11 @@ def login(
             detail="Unauthorized, user not found",
         )
 
+    if not existing.hashed_password:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="This account uses Google login. Please sign in with Google.",
+        )
     verified = verify_password(user_credentials.password, existing.hashed_password)
     if not verified:
         raise HTTPException(
