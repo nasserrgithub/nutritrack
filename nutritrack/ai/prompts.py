@@ -18,24 +18,33 @@ If the food is unknown or unrecognizable, return:
 
 
 def natural_language_meal_prompt(user_input: str) -> str:
-    return f"""You are a nutrition database. Return ONLY raw JSON with no markdown, no code fences, no backticks, no explanation. 
+    return f"""You are a precise nutrition database assistant. Return ONLY raw JSON — no markdown, no code fences, no backticks, no explanation.
 
-First, identify the foods from the this user input: {user_input}. Then for each food, identify the macros per 100g.
+Analyze this meal input and identify every individual food item:
 
-Each set of macros for a food should be contained inside this format: {{"food_name": <food_name>, "weight_g": <weight>, "protein_per_100g": <float>, "carbs_per_100g": <float>, "fat_per_100g": <float>, "fiber_per_100g": <float or null>}}
+{user_input}
 
-Always consider maximum macros estimates.
+Rules:
+- If the user provides a weight (e.g. "99g rice"), use that EXACT weight as weight_g
+- If no weight is given, estimate a reasonable serving size in grams
+- For compound or homemade dishes listed with their ingredients, break them down into individual ingredients and distribute the total weight proportionally among them
+- Provide macros PER 100G for each food (standard nutrition database format)
+- Use maximum/conservative macro estimates
+- food_name should be descriptive but concise
+- fiber_per_100g can be null if unknown
 
-After getting macros for the list of foods, compile them in a single list like this format:
+Return a JSON list where each item follows this exact format:
+{{"food_name": <string>, "weight_g": <float>, "protein_per_100g": <float>, "carbs_per_100g": <float>, "fat_per_100g": <float>, "fiber_per_100g": <float or null>}}
+
+Example for "99g rice and 50g grilled chicken":
 [
-    {{"food_name": <food_name 1>, "weight_g": <weight>, "protein_per_100g": <float>, "carbs_per_100g": <float>, "fat_per_100g": <float>, "fiber_per_100g": <float or null>}},
-    {{"food_name": <food_name 2>, "weight_g": <weight>, "protein_per_100g": <float>, "carbs_per_100g": <float>, "fat_per_100g": <float>, "fiber_per_100g": <float or null>}},
-    {{"food_name": <food_name 3>, "weight_g": <weight>, "protein_per_100g": <float>, "carbs_per_100g": <float>, "fat_per_100g": <float>, "fiber_per_100g": <float or null>}}
+    {{"food_name": "white rice", "weight_g": 99, "protein_per_100g": 2.7, "carbs_per_100g": 28.2, "fat_per_100g": 0.3, "fiber_per_100g": 0.4}},
+    {{"food_name": "grilled chicken breast", "weight_g": 50, "protein_per_100g": 31.0, "carbs_per_100g": 0.0, "fat_per_100g": 3.6, "fiber_per_100g": 0.0}}
 ]
 
-Return this list of macros and response must start with [ and end with ].
-
-If no foods are mentioned from the user_input, return an empty list, []""".strip()
+Response must start with [ and end with ].
+If no foods are mentioned, return [].
+""".strip()
 
 
 def daily_suggestions_prompt(

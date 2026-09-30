@@ -17,6 +17,9 @@ def get_database_url() -> str:
     url = os.getenv("DATABASE_URL")
     if not url:
         raise RuntimeError("DATABASE_URL environment variable is not set")
+    # explicitly use psycopg2 driver — prevents SQLAlchemy from trying psycopg v3 first
+    if url.startswith("postgresql://"):
+        url = url.replace("postgresql://", "postgresql+psycopg2://", 1)
     return url
 
 

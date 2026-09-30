@@ -137,7 +137,7 @@ class DailySummaryResponse(BaseModel):
 
 
 class NaturalMealLog(BaseModel):
-    text: str = Field(..., min_length=1, max_length=255)
+    text: str = Field(..., min_length=1, max_length=2000)
     meal_slot: str = Field(default="unspecified")
     logged_date: date = Field(default_factory=date.today)
 
@@ -180,3 +180,15 @@ class CustomMacrosLog(BaseModel):
     fat_g: float = Field(..., ge=0)
     meal_slot: str = Field(default="unspecified")
     logged_date: date = Field(default_factory=date.today)
+
+
+class ProfileComplete(BaseModel):
+    weight_kg: float = Field(..., gt=0)
+    height_cm: float = Field(..., gt=0)
+    age: int = Field(..., gt=0)
+    gender: str = Field(..., pattern="^(male|female|other)$")
+
+class GoogleAuthResponse(BaseModel):
+    access_token: str
+    profile_complete: bool
+    user_id: int

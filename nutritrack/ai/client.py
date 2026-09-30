@@ -34,8 +34,8 @@ async def lookup_food_macros(food_name: str) -> dict:
     client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
     try:
         response = await client.messages.create(
-            model="claude-sonnet-4-5",
-            max_tokens=256,
+            model="claude-sonnet-4-6",
+            max_tokens=2048,
             messages=[{"role": "user", "content": food_macro_lookup_prompt(food_name)}],
         )
         block = response.content[0]
@@ -69,7 +69,7 @@ async def parse_natural_language_meal(user_input: str) -> list[dict]:
     try:
         response = await client.messages.create(
             model="claude-sonnet-4-5",
-            max_tokens=256,
+            max_tokens=2048,
             messages=[
                 {"role": "user", "content": natural_language_meal_prompt(user_input)}
             ],
@@ -78,6 +78,7 @@ async def parse_natural_language_meal(user_input: str) -> list[dict]:
         if not isinstance(block, TextBlock):
             raise AIServiceError(f"Unexpected response block type: {type(block)}")
         text = _strip_markdown_fences(block.text)
+        print(f"DEBUG raw text: {repr(text)}") 
         result = json.loads(text)
 
         if not result:
@@ -96,6 +97,8 @@ async def parse_natural_language_meal(user_input: str) -> list[dict]:
     except FoodNotFoundError:
         raise
     except Exception as exc:
+        import traceback
+        traceback.print_exc()
         raise AIServiceError(str(exc))
 
 
@@ -105,8 +108,8 @@ async def get_food_suggestions(
     client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
     try:
         response = await client.messages.create(
-            model="claude-sonnet-4-5",
-            max_tokens=1024,
+            model="claude-sonnet-4-6",
+            max_tokens=2048,
             messages=[
                 {
                     "role": "user",

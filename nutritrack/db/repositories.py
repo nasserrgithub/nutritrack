@@ -113,6 +113,48 @@ class UserRepository:
         logger.info(f"User {user.email} (id={user.id}) has been deactivated.")
         return user
 
+    def get_by_google_id(self, google_id: str) -> Optional[UserModel]:
+        return (
+            self.session.query(UserModel)
+            .filter(UserModel.google_id == google_id)
+            .first()
+        )
+
+    def create_google_user(
+        self,
+        email: str,
+        google_id: str,
+        avatar_url: Optional[str] = None,
+    ) -> UserModel:
+        user = UserModel(
+            email=email,
+            google_id=google_id,
+            avatar_url=avatar_url,
+            profile_complete=False,
+            is_active=True,
+        )
+        self.session.add(user)
+        self.session.flush()
+        logger.info(f"New Google user registered: {email}")
+        return user
+
+    def complete_profile(
+        self,
+        user_id: int,
+        weight_kg: float,
+        height_cm: float,
+        age: int,
+        gender: str,
+    ) -> UserModel:
+        user = self.session.get(UserModel, user_id)
+        user.weight_kg = weight_kg
+        user.height_cm = height_cm
+        user.age = age
+        user.gender = gender
+        user.profile_complete = True
+        self.session.flush()
+        return user
+
 
 class FoodEntryRepository:
     def __init__(self, session: Session) -> None:

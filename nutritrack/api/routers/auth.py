@@ -1,17 +1,105 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from nutritrack.api.dependencies import get_db_session
+from authlib.integrations.starlette_client import OAuth
+from starlette.requests import Request
+from starlette.responses import RedirectResponse
+from nutritrack.api.settings import get_settings
+
+from nutritrack.api.dependencies import get_db_session, get_current_user
 from nutritrack.api.auth_utils import (
     hash_password,
     create_access_token,
     verify_password,
 )
 from nutritrack.db.repositories import UserRepository
-from nutritrack.db.schemas import UserCreate, UserResponse, LoginRequest, TokenResponse
+from nutritrack.db.schemas import UserCreate, UserResponse, LoginRequest, TokenResponse, ProfileComplete
+
 from nutritrack.core.logger import get_logger
 
 logger = get_logger(__name__)
 router = APIRouter()
+
+
+
+settings = get_settings()
+
+oauth = OAuth()
+oauth.register(
+    name="google",
+    client_id=settings.google_client_id,
+    client_secret=settings.google_client_secret,
+    server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
+    client_kwargs={"scope": "openid email profile"},
+)
+
+
+@router.get("/google")
+async def login_via_google(request: Request):
+    return await oauth.google.authorize_redirect(
+        request,
+        settings.google_redirect_uri,
+    )
+
+
+@router.get("/google/callback")
+async def auth_via_google(
+    request: Request,
+    session: Session = Depends(get_db_session),
+):
+    token = await oauth.google.authorize_access_token(request)
+    user_info = token.get("userinfo")
+
+    google_id = user_info["sub"]
+    email = user_info["email"]
+    avatar_url = user_info.get("picture")
+
+    repo = UserRepository(session)
+
+    # check if user already exists by Google ID
+    user = repo.get_by_google_id(google_id)
+
+    if not user:
+        # check if email already registered (via email/password)
+        existing = repo.get_by_email(email)
+        if existing:
+            # link Google account to existing user
+            existing.google_id = google_id
+            existing.avatar_url = avatar_url
+            session.flush()
+            user = existing
+        else:
+            # create new Google user
+            user = repo.create_google_user(
+                email=email,
+                google_id=google_id,
+                avatar_url=avatar_url,
+            )
+
+    # issue JWT
+    access_token = create_access_token(user.id)
+
+    # redirect to frontend with token and profile_complete status
+    frontend_url = settings.frontend_url
+    return RedirectResponse(
+        url=f"{frontend_url}/auth/callback?token={access_token}&profile_complete={str(user.profile_complete).lower()}&user_id={user.id}"
+    )
+
+
+@router.post("/profile", response_model=UserResponse)
+def complete_profile(
+    profile_data: ProfileComplete,
+    user: UserModel = Depends(get_current_user),
+    session: Session = Depends(get_db_session),
+) -> UserResponse:
+    repo = UserRepository(session)
+    updated_user = repo.complete_profile(
+        user_id=user.id,
+        weight_kg=profile_data.weight_kg,
+        height_cm=profile_data.height_cm,
+        age=profile_data.age,
+        gender=profile_data.gender,
+    )
+    return UserResponse.model_validate(updated_user)
 
 
 @router.post(

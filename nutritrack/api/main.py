@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request as StarletteRequest
+from starlette.middleware.sessions import SessionMiddleware
 
 from nutritrack.core.logger import setup_logging, get_logger
 from nutritrack.core.exceptions import (
@@ -17,9 +18,11 @@ from nutritrack.core.exceptions import (
     AIServiceError,
 )
 from nutritrack.api.routers import auth, foods, logs, goals, summary, weight
+from nutritrack.api.settings import get_settings
 
 logger = get_logger(__name__)
 
+settings = get_settings()
 
 # App setup
 @asynccontextmanager
@@ -41,6 +44,8 @@ app = FastAPI(
 
 
 # Middlewares
+app.add_middleware(SessionMiddleware, secret_key=settings.session_secret_key)
+
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
     async def dispatch(
         self, request: StarletteRequest, call_next: RequestResponseEndpoint
