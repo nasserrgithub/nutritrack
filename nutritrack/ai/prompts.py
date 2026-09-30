@@ -17,30 +17,36 @@ If the food is unknown or unrecognizable, return:
 {{"error": "unknown_food"}}""".strip()
 
 
-def natural_language_meal_prompt(user_input: str) -> str:
+def natural_language_meal_prompt(user_input: str, estimate_mode: str = "medium") -> str:
+    estimate_instructions = {
+        "low": "Use CONSERVATIVE/MINIMUM macro estimates. When in doubt, estimate on the lower end. Assume smaller portions, leaner cooking methods, less oil/butter used.",
+        "medium": "Use AVERAGE/STANDARD macro estimates based on typical preparation methods and standard portion sizes.",
+        "high": "Use MAXIMUM macro estimates. When in doubt, estimate on the higher end. Assume larger portions, more oil/butter used, richer preparation methods.",
+    }
+    estimate_note = estimate_instructions.get(
+        estimate_mode, estimate_instructions["medium"]
+    )
+
     return f"""You are a precise nutrition database assistant. Return ONLY raw JSON — no markdown, no code fences, no backticks, no explanation.
 
 Analyze this meal input and identify every individual food item:
 
 {user_input}
 
+ESTIMATION MODE: {estimate_mode.upper()}
+{estimate_note}
+
 Rules:
 - If the user provides a weight (e.g. "99g rice"), use that EXACT weight as weight_g
 - If no weight is given, estimate a reasonable serving size in grams
 - For compound or homemade dishes listed with their ingredients, break them down into individual ingredients and distribute the total weight proportionally among them
 - Provide macros PER 100G for each food (standard nutrition database format)
-- Use maximum/conservative macro estimates
+- Apply the estimation mode above when determining macro values and portion sizes
 - food_name should be descriptive but concise
 - fiber_per_100g can be null if unknown
 
 Return a JSON list where each item follows this exact format:
 {{"food_name": <string>, "weight_g": <float>, "protein_per_100g": <float>, "carbs_per_100g": <float>, "fat_per_100g": <float>, "fiber_per_100g": <float or null>}}
-
-Example for "99g rice and 50g grilled chicken":
-[
-    {{"food_name": "white rice", "weight_g": 99, "protein_per_100g": 2.7, "carbs_per_100g": 28.2, "fat_per_100g": 0.3, "fiber_per_100g": 0.4}},
-    {{"food_name": "grilled chicken breast", "weight_g": 50, "protein_per_100g": 31.0, "carbs_per_100g": 0.0, "fat_per_100g": 3.6, "fiber_per_100g": 0.0}}
-]
 
 Response must start with [ and end with ].
 If no foods are mentioned, return [].

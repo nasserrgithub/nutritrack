@@ -142,6 +142,7 @@ class NaturalMealLog(BaseModel):
     text: str = Field(..., min_length=1, max_length=2000)
     meal_slot: str = Field(default="unspecified")
     logged_date: date = Field(default_factory=date.today)
+    estimate_mode: str = Field(default="medium", pattern="^(low|medium|high)$")
 
 
 class SuggestionRequest(BaseModel):

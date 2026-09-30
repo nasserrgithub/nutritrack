@@ -64,14 +64,20 @@ async def lookup_food_macros(food_name: str) -> dict:
         raise AIServiceError(str(exc))
 
 
-async def parse_natural_language_meal(user_input: str) -> list[dict]:
+async def parse_natural_language_meal(
+    user_input: str,
+    estimate_mode: str = "medium",
+) -> list[dict]:
     client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
     try:
         response = await client.messages.create(
-            model="claude-sonnet-4-5",
+            model="claude-sonnet-4-6",
             max_tokens=2048,
             messages=[
-                {"role": "user", "content": natural_language_meal_prompt(user_input)}
+                {
+                    "role": "user",
+                    "content": natural_language_meal_prompt(user_input, estimate_mode),
+                }
             ],
         )
         block = response.content[0]

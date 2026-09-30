@@ -104,7 +104,10 @@ async def log_natural_meal(
     food_entry_repo = FoodEntryRepository(session)
     food_entry_responses = []
 
-    ai_lookup_foods = await parse_natural_language_meal(meal_log.text)
+    ai_lookup_foods = await parse_natural_language_meal(
+        meal_log.text,
+        estimate_mode=meal_log.estimate_mode,
+    )
     for ai_lookup in ai_lookup_foods:
         food = food_repo.get_by_name(ai_lookup["food_name"])
         if not food:
