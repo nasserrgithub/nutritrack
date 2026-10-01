@@ -51,18 +51,27 @@ async def log_food_entry(
 ) -> FoodEntryResponse:
 
     food_repo = FoodRepository(session)
-    food = food_repo.get_by_name(food_entry.food_name)
+    food_name = food_entry.food_name.strip()
+    estimate_mode = food_entry.estimate_mode
 
-    if not food:
-        ai_lookup = await lookup_food_macros(food_entry.food_name)
-        food = food_repo.create(
-            name=food_entry.food_name,
-            protein_per_100g=ai_lookup["protein_per_100g"],
-            carbs_per_100g=ai_lookup["carbs_per_100g"],
-            fat_per_100g=ai_lookup["fat_per_100g"],
-            fiber_per_100g=ai_lookup["fiber_per_100g"],
-            source="ai_lookup",
-        )
+    # 1. Real data (CSV seed, manual, custom macros) wins regardless of mode
+    food = food_repo.get_by_name(food_name)
+
+    # 2. Otherwise use the AI estimate cached for THIS mode, or create it
+    if food is None or food.source == "ai_lookup":
+        food = food_repo.get_by_name(food_name, estimate_mode=estimate_mode)
+
+        if not food:
+            ai_lookup = await lookup_food_macros(food_name, estimate_mode=estimate_mode)
+            food = food_repo.create(
+                name=food_name,
+                protein_per_100g=ai_lookup["protein_per_100g"],
+                carbs_per_100g=ai_lookup["carbs_per_100g"],
+                fat_per_100g=ai_lookup["fat_per_100g"],
+                fiber_per_100g=ai_lookup["fiber_per_100g"],
+                source="ai_lookup",
+                estimate_mode=estimate_mode,
+            )
 
     food_entry_repo = FoodEntryRepository(session)
     food_entry_created = food_entry_repo.create(

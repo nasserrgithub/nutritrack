@@ -24,7 +24,7 @@ def _strip_markdown_fences(text: str) -> str:
     return text
 
 
-async def lookup_food_macros(food_name: str) -> dict:
+async def lookup_food_macros(food_name: str, estimate_mode: str = "medium") -> dict:
     """
     Calls Anthropic API to get macros per 100g for a given food name.
     Returns a dict with protein_per_100g, carbs_per_100g, fat_per_100g, fiber_per_100g.
@@ -36,7 +36,12 @@ async def lookup_food_macros(food_name: str) -> dict:
         response = await client.messages.create(
             model="claude-sonnet-4-6",
             max_tokens=2048,
-            messages=[{"role": "user", "content": food_macro_lookup_prompt(food_name)}],
+            messages=[
+                {
+                    "role": "user",
+                    "content": food_macro_lookup_prompt(food_name, estimate_mode),
+                }
+            ],
         )
         block = response.content[0]
         if not isinstance(block, TextBlock):

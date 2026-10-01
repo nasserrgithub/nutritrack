@@ -1,6 +1,16 @@
 from datetime import datetime, date
 from typing import Optional
-from sqlalchemy import String, Float, Integer, Boolean, Date, DateTime, ForeignKey, func
+from sqlalchemy import (
+    String,
+    Float,
+    Integer,
+    Boolean,
+    Date,
+    DateTime,
+    ForeignKey,
+    func,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from nutritrack.db.base import Base
 
@@ -35,6 +45,9 @@ class UserModel(Base):
 
 class FoodModel(Base):
     __tablename__ = "foods"
+    __table_args__ = (
+        UniqueConstraint("name", "estimate_mode", name="uq_foods_name_estimate_mode"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
@@ -43,6 +56,9 @@ class FoodModel(Base):
     fat_per_100g: Mapped[float] = mapped_column(Float, nullable=False)
     fiber_per_100g: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     source: Mapped[str] = mapped_column(String(20), default="manual")
+    # NULL for real data (CSV seed, manual, custom macros);
+    # "low" / "medium" / "high" for AI estimates made in that mode
+    estimate_mode: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     # relationships

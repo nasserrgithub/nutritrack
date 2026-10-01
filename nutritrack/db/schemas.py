@@ -75,6 +75,7 @@ class FoodEntryCreate(BaseModel):
     weight_g: float = Field(..., gt=0)
     meal_slot: str = Field(min_length=1, max_length=20, default="unspecified")
     logged_date: date = Field(default_factory=date.today)
+    estimate_mode: str = Field(default="medium", pattern="^(low|medium|high)$")
 
 
 class FoodEntryResponse(BaseModel):

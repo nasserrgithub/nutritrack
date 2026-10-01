@@ -1,14 +1,24 @@
 import json
 
 
-def food_macro_lookup_prompt(food_name: str) -> str:
+def food_macro_lookup_prompt(food_name: str, estimate_mode: str = "medium") -> str:
+    estimate_instructions = {
+        "low": "Use CONSERVATIVE/MINIMUM macro estimates. Assume leaner cuts, less oil/butter, smaller portions. When in doubt, estimate on the lower end.",
+        "medium": "Use AVERAGE/STANDARD macro estimates based on typical preparation methods.",
+        "high": "Use MAXIMUM macro estimates. Assume fattier cuts, more oil/butter, richer preparation. When in doubt, estimate on the higher end.",
+    }
+    estimate_note = estimate_instructions.get(
+        estimate_mode, estimate_instructions["medium"]
+    )
+
     return f"""You are a nutrition database. Return ONLY raw JSON with no markdown, no code fences, no backticks, no explanation.
 
 The response must start with {{ and end with }}.
 
 Return the macros per 100g for: {food_name}
 
-Always consider maximum macros estimates.
+ESTIMATION MODE: {estimate_mode.upper()}
+{estimate_note}
 
 Required format:
 {{"protein_per_100g": <float>, "carbs_per_100g": <float>, "fat_per_100g": <float>, "fiber_per_100g": <float or null>}}

@@ -31,6 +31,7 @@ class FoodRepository:
         fat_per_100g: float,
         fiber_per_100g: Optional[float] = None,
         source: str = "manual",
+        estimate_mode: Optional[str] = None,
     ) -> FoodModel:
         food = FoodModel(
             name=name,
@@ -39,6 +40,7 @@ class FoodRepository:
             fat_per_100g=fat_per_100g,
             fiber_per_100g=fiber_per_100g,
             source=source,
+            estimate_mode=estimate_mode,
         )
         self.session.add(food)
         self.session.flush()  # assigns id without committing
@@ -51,12 +53,23 @@ class FoodRepository:
             raise FoodNotFoundError(str(food_id))
         return food
 
-    def get_by_name(self, name: str) -> Optional[FoodModel]:
-        return (
-            self.session.query(FoodModel)
-            .filter(func.lower(FoodModel.name) == name.lower())
-            .first()
+    def get_by_name(
+        self, name: str, estimate_mode: Optional[str] = None
+    ) -> Optional[FoodModel]:
+        """
+        Exact, case-insensitive name match.
+        estimate_mode=None  -> only rows WITHOUT an estimate mode (real data and
+                               older rows), so existing callers behave as before
+        estimate_mode="low" -> only the AI estimate cached for that mode
+        """
+        query = self.session.query(FoodModel).filter(
+            func.lower(FoodModel.name) == name.lower()
         )
+        if estimate_mode is None:
+            query = query.filter(FoodModel.estimate_mode.is_(None))
+        else:
+            query = query.filter(FoodModel.estimate_mode == estimate_mode)
+        return query.first()
 
     def get_all(self) -> list[FoodModel]:
         return self.session.query(FoodModel).all()
