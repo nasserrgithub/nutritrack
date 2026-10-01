@@ -57,13 +57,14 @@ class FoodRepository:
         self, name: str, estimate_mode: Optional[str] = None
     ) -> Optional[FoodModel]:
         """
-        Exact, case-insensitive name match.
-        estimate_mode=None  -> only rows WITHOUT an estimate mode (real data and
-                               older rows), so existing callers behave as before
+        Exact, case-insensitive name match. Custom foods are never returned:
+        they belong only to the entry they were logged with.
+        estimate_mode=None  -> only rows WITHOUT an estimate mode
         estimate_mode="low" -> only the AI estimate cached for that mode
         """
         query = self.session.query(FoodModel).filter(
-            func.lower(FoodModel.name) == name.lower()
+            func.lower(FoodModel.name) == name.lower(),
+            FoodModel.source != "custom",
         )
         if estimate_mode is None:
             query = query.filter(FoodModel.estimate_mode.is_(None))
