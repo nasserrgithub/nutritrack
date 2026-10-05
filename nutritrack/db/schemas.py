@@ -51,7 +51,7 @@ class UserCreate(BaseModel):
     def validate_email(cls, email: str) -> str:
         if "@" not in email:
             raise ValueError("Invalid email, it should contain '@'")
-        return email
+        return email.strip()
 
 
 class UserResponse(BaseModel):

@@ -44,6 +44,11 @@ app = FastAPI(
 )
 
 
+# Guard clause for secret session key
+if not settings.session_secret_key:
+    raise RuntimeError("SESSION_SECRET_KEY is not set")
+
+
 # Middlewares
 app.add_middleware(SessionMiddleware, secret_key=settings.session_secret_key)
 
