@@ -5,7 +5,7 @@ from passlib.context import CryptContext
 from nutritrack.api.settings import get_settings
 
 settings = get_settings()
-SECRET_KEY = settings.secret_key
+SECRET_KEY = settings.secret_key.get_secret_value()
 ACCESS_TOKEN_EXPIRE_MINUTES = settings.access_token_expire_minutes
 ALGORITHM = "HS256"
 

@@ -7,7 +7,7 @@ settings = get_settings()
 
 
 def send_email(to: str, subject: str, html_body: str) -> None:
-    resend.api_key = settings.resend_api_key
+    resend.api_key = settings.resend_api_key.get_secret_value()
     params: resend.Emails.SendParams = {
         "from": settings.mail_from,
         "to": [to],

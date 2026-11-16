@@ -31,7 +31,9 @@ async def lookup_food_macros(food_name: str, estimate_mode: str = "medium") -> d
     Raises FoodNotFoundError if the food is unrecognizable.
     Raises AIServiceError if the API call fails.
     """
-    client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+    client = anthropic.AsyncAnthropic(
+        api_key=settings.anthropic_api_key.get_secret_value()
+    )
     try:
         response = await client.messages.create(
             model="claude-sonnet-4-6",
@@ -73,7 +75,9 @@ async def parse_natural_language_meal(
     user_input: str,
     estimate_mode: str = "medium",
 ) -> list[dict]:
-    client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+    client = anthropic.AsyncAnthropic(
+        api_key=settings.anthropic_api_key.get_secret_value()
+    )
     try:
         response = await client.messages.create(
             model="claude-sonnet-4-6",
@@ -117,7 +121,9 @@ async def get_food_suggestions(
     goal: dict,
     preference: str | None = None,
 ) -> list[dict]:
-    client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+    client = anthropic.AsyncAnthropic(
+        api_key=settings.anthropic_api_key.get_secret_value()
+    )
     try:
         response = await client.messages.create(
             model="claude-sonnet-4-6",

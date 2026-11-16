@@ -1,7 +1,7 @@
 import pytest
 
 from datetime import date, timedelta
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from fastapi.testclient import TestClient
 
@@ -92,7 +92,9 @@ def multi_day_food_entries(sample_food: Food, sample_food2: Food) -> list[FoodEn
 # Fixtures for DB connection
 @pytest.fixture(scope="session")
 def db_engine():
-    engine = create_engine(settings.database_url)
+    engine = create_engine(settings.database_url.get_secret_value())
+    with engine.begin() as conn:
+        conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
     Base.metadata.create_all(engine)
     yield engine
     engine.dispose()
