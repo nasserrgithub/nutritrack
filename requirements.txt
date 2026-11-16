@@ -75,8 +75,6 @@ platformdirs==4.12.2
 pluggy==1.6.0
 prompt_toolkit==3.0.53
 propcache==0.5.4
-psycopg==3.3.6
-psycopg2==2.9.13
 psycopg2-binary==2.9.13
 pyasn1==0.6.4
 pycparser==3.0
