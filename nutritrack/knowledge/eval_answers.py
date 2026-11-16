@@ -18,11 +18,12 @@ sometimes is a real problem, and one run can hide it.
 import argparse
 import asyncio
 import json
+import re
 from pathlib import Path
 
 from nutritrack.db.database import get_session
 from nutritrack.db.schemas import CoachAnswer
-from nutritrack.knowledge.coach import ask_coach
+from nutritrack.knowledge.coach import CITATION, ask_coach, split_sentences
 
 
 def check(expect: dict, answer: CoachAnswer) -> list[str]:
@@ -46,6 +47,13 @@ def check(expect: dict, answer: CoachAnswer) -> list[str]:
         failures.append(
             f"should cite at most {expect['max_sources']} source(s), cited {sources}"
         )
+
+    if expect.get("all_sentences_cited"):
+        uncited = [
+            s for s in split_sentences(answer.answer) if not re.search(CITATION, s)
+        ]
+        if uncited:
+            failures.append(f"uncited sentence(s): {uncited}")
     return failures
 
 

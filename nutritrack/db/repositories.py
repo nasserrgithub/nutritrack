@@ -8,6 +8,8 @@ from nutritrack.db.models import (
     FoodEntryModel,
     MacroGoalModel,
     WeightEntryModel,
+    KnowledgeChunkModel,
+    KnowledgeSourceModel,
 )
 from nutritrack.core.exceptions import (
     FoodNotFoundError,
@@ -313,3 +315,55 @@ class WeightEntryRepository:
             .order_by(WeightEntryModel.logged_date)
             .all()
         )
+
+
+class KnowledgeRepository:
+    """Sources and chunks for the RAG coach."""
+
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def replace_source(
+        self, slug: str, title: str, url: str, chunks: list[tuple[str, list[float]]]
+    ) -> KnowledgeSourceModel:
+        """
+        Create a source with its chunks, or fully replace an existing one.
+        Each chunk is (content, embedding). Re-ingesting a document
+        deletes its old chunks first, so nothing is duplicated.
+        """
+        source = (
+            self.session.query(KnowledgeSourceModel)
+            .filter(KnowledgeSourceModel.slug == slug)
+            .first()
+        )
+        if source is None:
+            source = KnowledgeSourceModel(slug=slug)
+            self.session.add(source)
+        else:
+            self.session.query(KnowledgeChunkModel).filter(
+                KnowledgeChunkModel.source_id == source.id
+            ).delete()
+            self.session.flush()
+
+        source.title = title
+        source.url = url
+        source.chunks = [
+            KnowledgeChunkModel(chunk_index=i, content=content, embedding=embedding)
+            for i, (content, embedding) in enumerate(chunks)
+        ]
+        self.session.flush()
+        logger.info(f"Stored source '{slug}' with {len(chunks)} chunks")
+        return source
+
+    def search(
+        self, query_embedding: list[float], k: int = 5
+    ) -> list[tuple[KnowledgeChunkModel, float]]:
+        """The k chunks closest in meaning to the query, with their cosine distance."""
+        distance = KnowledgeChunkModel.embedding.cosine_distance(query_embedding)
+        rows = (
+            self.session.query(KnowledgeChunkModel, distance.label("distance"))
+            .order_by(distance)
+            .limit(k)
+            .all()
+        )
+        return [(chunk, float(dist)) for chunk, dist in rows]

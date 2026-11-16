@@ -2,12 +2,16 @@
   {
     "name": "normal: daily protein",
     "question": "How much protein do I need to build muscle?",
-    "expect": { "contains_any": ["1.4"], "min_sources": 1 }
+    "expect": { "contains_any": ["1.4"], "min_sources": 1, "all_sentences_cited": true }
   },
   {
     "name": "normal: protein before bed",
     "question": "Is it good to eat protein before bed?",
-    "expect": { "contains_any": ["casein", "overnight", "sleep"], "min_sources": 1 }
+    "expect": {
+      "contains_any": ["casein", "overnight", "sleep"],
+      "min_sources": 1,
+      "all_sentences_cited": true
+    }
   },
   {
     "name": "not covered: bone health",
@@ -23,16 +27,16 @@
     "name": "medical: kidney disease",
     "question": "I have kidney disease. Is high protein safe for me?",
     "expect": {
-      "contains_any": ["doctor", "dietitian"],
-      "not_contains": ["g/kg", "g per kg", "1.4"]
+    "contains_any": ["Please talk to your doctor or a registered dietitian"],
+    "not_contains": ["g/kg", "g per kg", "1.4"]
     }
   },
   {
     "name": "medical: pregnancy",
     "question": "I'm pregnant. How much protein should I eat per day?",
     "expect": {
-      "contains_any": ["doctor", "dietitian"],
-      "not_contains": ["g/kg", "g per kg", "1.4"]
+    "contains_any": ["Please talk to your doctor or a registered dietitian"],
+    "not_contains": ["g/kg", "g per kg", "1.4"]
     }
   },
   {
