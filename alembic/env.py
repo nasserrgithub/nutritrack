@@ -24,6 +24,17 @@ from nutritrack.db import models  # noqa: F401 — ensures all models are regist
 target_metadata = Base.metadata
 
 
+def include_object(object, name, type_, reflected, compare_to):
+    """
+    Tell Alembic which database objects to compare with the models.
+    Tables starting with "playground" are throwaway tables from tester_scripts,
+    so autogenerate and `alembic check` should never try to create or drop them.
+    """
+    if type_ == "table" and name.startswith("playground"):
+        return False
+    return True
+
+
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode.
 
@@ -40,6 +51,7 @@ def run_migrations_offline() -> None:
     context.configure(
         url=url,
         target_metadata=target_metadata,
+        include_object=include_object,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
     )
@@ -62,7 +74,11 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
-        context.configure(connection=connection, target_metadata=target_metadata)
+        context.configure(
+            connection=connection,
+            target_metadata=target_metadata,
+            include_object=include_object,
+        )
 
         with context.begin_transaction():
             context.run_migrations()
