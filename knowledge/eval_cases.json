@@ -1,0 +1,185 @@
+[
+  {
+    "question": "How much protein do I need to build muscle?",
+    "source": "issn-protein-exercise",
+    "must_contain_any": [
+      "1.4-2.0 g protein/kg body weight/day",
+      "daily intakes of 1.4 to 2.0 g/kg/day",
+      "1.4 to 2.0 g of protein per kg of bodyweight per day"
+    ]
+  },
+  {
+    "question": "when should I eat protein after a workout",
+    "source": "issn-protein-exercise",
+    "must_contain_any": [
+      "protein consumption directly after resistance exercise",
+      "post workout mps rates peak within three hours",
+      "greatest in the first five to six hours following exercise"
+    ]
+  },
+  {
+    "question": "is too much protein bad for my kidneys",
+    "source": "issn-protein-exercise",
+    "must_contain_any": [
+      "no indication of hepato-renal harm or damage",
+      "no harmful effects on kidney or liver function",
+      "no controlled scientific evidence exists"
+    ]
+  },
+  {
+    "question": "are plant proteins as good as whey",
+    "source": "issn-protein-exercise",
+    "must_contain_any": [
+      "rice protein may be a suitable alternative to whey protein",
+      "rice protein stimulated similar increases in body composition adaptations to whey protein",
+      "greater than casein, but less than whey",
+      "achieve optimal growth as compared to ingesting only plant proteins"
+    ]
+  },
+  {
+    "question": "how many grams of protein should be in each meal",
+    "source": "issn-protein-exercise",
+    "must_contain_any": [
+      "20-40 g of protein per meal",
+      "20-40 g per meal",
+      "20-25 g of protein (~0.25 g/kg/meal)",
+      "0.25 g of protein per kg of body weight per dose",
+      "0.25 g of a high-quality protein per kg of body weight"
+    ]
+  },
+  {
+    "question": "What is the RDA for protein?",
+    "source": "issn-protein-exercise",
+    "must_contain_any": [
+      "the current rda for protein is 0.8 g/kg/day",
+      "rda 0.8 g/kg/day"
+    ]
+  },
+  {
+    "question": "Should I eat more protein when I'm cutting?",
+    "source": "issn-protein-exercise",
+    "must_contain_any": [
+      "retention of lean body mass in resistance-trained subjects during hypocaloric periods",
+      "maximize the loss of fat tissue while also promoting the maintenance of fat-free mass",
+      "can promote greater losses of fat mass",
+      "greater amounts may be needed for people attempting to restrict energy intake",
+      "this group also lost the highest percentage of fat-free mass"
+    ]
+  },
+  {
+    "question": "How much protein do older adults need per meal?",
+    "source": "issn-protein-exercise",
+    "must_contain_any": [
+      "higher doses (~40 g) are likely needed to maximize mps responses in elderly individuals",
+      "a 40 g dose of whey protein isolate is needed in this population"
+    ]
+  },
+  {
+    "question": "Is it good to eat protein before going to sleep?",
+    "source": "issn-protein-exercise",
+    "must_contain_any": [
+      "pre-sleep casein protein intake (30-40 g)",
+      "pre-sleep protein consumption/ingestion as advantageous to mps",
+      "consuming protein pre-sleep has been shown to increase overnight mps",
+      "an underutilized time to take advantage of a protein feeding opportunity",
+      "greater improvements in muscle mass and strength over the 12-week study"
+    ]
+  },
+  {
+    "question": "How much leucine should a protein serving have?",
+    "source": "issn-protein-exercise",
+    "must_contain_any": [
+      "700-3000 mg of leucine",
+      "one to three g of leucine per meal",
+      "1-3 g of leucine"
+    ]
+  },
+  {
+    "question": "Is whey or casein better?",
+    "source": "issn-protein-exercise",
+    "must_contain_any": [
+      "faster-digesting whey proteins may be more beneficial",
+      "whey protein ingestion stimulated greater mps at both rest and following exercise when compared to casein",
+      "approximately 93% and 18% greater than casein and soy",
+      "whey protein provides a distinct advantage over other protein sources"
+    ]
+  },
+  {
+    "question": "How often should I eat protein during the day?",
+    "source": "issn-protein-exercise",
+    "must_contain_any": [
+      "evenly distributed, every 3-4 h, across the day",
+      "no more than 3-4 h between meals",
+      "approximately three hours apart",
+      "20-25 g doses every three hours",
+      "20 g protein every three hours"
+    ]
+  },
+  {
+    "question": "Do I need protein supplements or is food enough?",
+    "source": "issn-protein-exercise",
+    "must_contain_any": [
+      "supplementation is a practical way of ensuring intake of adequate protein quality and quantity",
+      "supplemental protein is a safe and convenient method"
+    ]
+  },
+  {
+    "question": "Does meat build more muscle than a vegetarian diet?",
+    "source": "issn-protein-exercise",
+    "must_contain_any": [
+      "increased in the meat-sourced diet group but decreased in the lactoovovegetarian diet group",
+      "when compared to a vegetarian protein-matched control",
+      "achieve optimal growth as compared to ingesting only plant proteins",
+      "it is possible to have complete proteins in a vegetarian diet"
+    ]
+  },
+  {
+    "question": "Is soy protein good for building muscle?",
+    "source": "issn-protein-exercise",
+    "must_contain_any": [
+      "soy is considered a lower quality complete protein",
+      "greater than casein, but less than whey",
+      "the soy group was not significantly different from the control group"
+    ]
+  },
+  {
+    "question": "Do endurance athletes need extra protein?",
+    "source": "issn-protein-exercise",
+    "must_contain_any": [
+      "increasing protein intakes above recommended intakes does not enhance endurance performance",
+      "endurance athletes should focus on achieving adequate carbohydrate intake",
+      "0.25 g of protein/kg body weight per hour of endurance exercise",
+      "adding protein to carbohydrate does not appear to improve endurance performance"
+    ]
+  },
+  {
+    "question": "Does it matter if I eat protein before or after training?",
+    "source": "issn-protein-exercise",
+    "must_contain_any": [
+      "benefits are derived from pre- or post-workout ingestion",
+      "no difference between pre- or post-exercise ingestion",
+      "consume a meal during the post-workout (or pre-workout) time period",
+      "less need for immediate post-exercise protein ingestion if a pre-exercise meal is consumed",
+      "the impact of timing strategies (immediately before or immediately after)",
+      "seem to be lessened for people who are already ingesting appropriate amounts of protein"
+    ]
+  },
+  {
+    "question": "What are essential amino acids?",
+    "source": "issn-protein-exercise",
+    "must_contain_any": [
+      "eaas cannot be produced in the body and therefore must be consumed in the diet",
+      "comprised of 9 eaas and 11 non-essential amino acids",
+      "seven of which are essential (nine conditionally)"
+    ]
+  },
+  {
+    "question": "How fast is whey protein digested?",
+    "source": "issn-protein-exercise",
+    "must_contain_any": [
+      "mixes easily, and is rapidly digested",
+      "robust hyperaminoacidemia 100 min after administration",
+      "faster digesting sources of protein include whey"
+    ]
+  }
+]
