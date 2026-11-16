@@ -61,7 +61,9 @@ def find_broken_phrases(cases: list[dict]) -> list[str]:
             continue
         for phrase in case_phrases(case):
             if not any(phrase in content for content in contents):
-                problems.append(f'"{phrase}" not found in {case["source"]} ({case["question"]})')
+                problems.append(
+                    f'"{phrase}" not found in {case["source"]} ({case["question"]})'
+                )
     return problems
 
 
@@ -82,7 +84,9 @@ async def run_eval(cases_path: Path, k: int) -> None:
         query_vector = await embed_query(case["question"])
         with get_session() as session:
             results = KnowledgeRepository(session).search(query_vector, k=k)
-            found = [(chunk.source.slug, normalize(chunk.content)) for chunk, _ in results]
+            found = [
+                (chunk.source.slug, normalize(chunk.content)) for chunk, _ in results
+            ]
 
         phrases = case_phrases(case)
         rank = next(

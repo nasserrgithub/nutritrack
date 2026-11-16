@@ -8,7 +8,8 @@ from nutritrack.ai.prompts import (
     natural_language_meal_prompt,
     daily_suggestions_prompt,
     COACH_SYSTEM_PROMPT,
-    coach_prompt
+    coach_prompt,
+    Passage,
 )
 from nutritrack.core.logger import get_logger
 
@@ -170,8 +171,10 @@ async def get_food_suggestions(
         raise AIServiceError(str(exc))
 
 
-async def answer_from_sources(question: str, passages: list[dict]) -> str:
-    client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key.get_secret_value())
+async def answer_from_sources(question: str, passages: list[Passage]) -> str:
+    client = anthropic.AsyncAnthropic(
+        api_key=settings.anthropic_api_key.get_secret_value()
+    )
     try:
         response = await client.messages.create(
             model="claude-sonnet-4-6",

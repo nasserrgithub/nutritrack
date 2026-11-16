@@ -13,7 +13,9 @@ import math
 import re
 
 HEADING_RE = re.compile(r"^#{1,6}\s+(.+)$")  # "# Title", "## Section", ...
-SENTENCE_END_RE = re.compile(r"(?<=[.!?])\s+(?=[A-Z0-9])")  # after . ! ? before a new sentence
+SENTENCE_END_RE = re.compile(
+    r"(?<=[.!?])\s+(?=[A-Z0-9])"
+)  # after . ! ? before a new sentence
 
 
 def estimate_tokens(text: str) -> int:

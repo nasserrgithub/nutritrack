@@ -40,16 +40,22 @@ async def _embed(texts: list[str], input_type: str) -> list[list[float]]:
     try:
         for start in range(0, len(texts), BATCH_SIZE):
             batch = texts[start : start + BATCH_SIZE]
-            result = await client.embed(batch, model=EMBEDDING_MODEL, input_type=input_type)
+            result = await client.embed(
+                batch, model=EMBEDDING_MODEL, input_type=input_type
+            )
             vectors.extend([[float(x) for x in vector] for vector in result.embeddings])
             total_tokens += result.total_tokens
     except Exception as exc:
         raise AIServiceError(f"Embedding request failed: {exc}") from exc
 
     if vectors and len(vectors[0]) != EMBEDDING_DIM:
-        raise AIServiceError(f"Expected {EMBEDDING_DIM}-number vectors, got {len(vectors[0])}")
+        raise AIServiceError(
+            f"Expected {EMBEDDING_DIM}-number vectors, got {len(vectors[0])}"
+        )
 
-    logger.info(f"Embedded {len(texts)} {input_type}(s) with {EMBEDDING_MODEL} ({total_tokens} tokens)")
+    logger.info(
+        f"Embedded {len(texts)} {input_type}(s) with {EMBEDDING_MODEL} ({total_tokens} tokens)"
+    )
     return vectors
 
 
