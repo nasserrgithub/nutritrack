@@ -203,3 +203,19 @@ class GoogleAuthResponse(BaseModel):
     access_token: str
     profile_complete: bool
     user_id: int
+
+
+class CoachQuestion(BaseModel):
+    question: str = Field(..., min_length=3, max_length=500)
+
+
+class CoachSource(BaseModel):
+    number: int
+    title: str
+    url: str
+    excerpt: str
+
+
+class CoachAnswer(BaseModel):
+    answer: str
+    sources: list[CoachSource]

@@ -7,6 +7,8 @@ from nutritrack.ai.prompts import (
     food_macro_lookup_prompt,
     natural_language_meal_prompt,
     daily_suggestions_prompt,
+    COACH_SYSTEM_PROMPT,
+    coach_prompt
 )
 from nutritrack.core.logger import get_logger
 
@@ -166,3 +168,23 @@ async def get_food_suggestions(
         raise
     except Exception as exc:
         raise AIServiceError(str(exc))
+
+
+async def answer_from_sources(question: str, passages: list[dict]) -> str:
+    client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key.get_secret_value())
+    try:
+        response = await client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=1024,
+            system=COACH_SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": coach_prompt(question, passages)}],
+        )
+        block = response.content[0]
+        if not isinstance(block, TextBlock):
+            raise AIServiceError(f"Unexpected response block type: {type(block)}")
+        logger.info(f"Coach answered with {response.usage.output_tokens} output tokens")
+        return block.text
+    except AIServiceError:
+        raise
+    except Exception as exc:
+        raise AIServiceError(str(exc)) from exc

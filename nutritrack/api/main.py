@@ -17,7 +17,7 @@ from nutritrack.core.exceptions import (
     InvalidMacroError,
     AIServiceError,
 )
-from nutritrack.api.routers import auth, foods, logs, goals, summary, weight
+from nutritrack.api.routers import auth, foods, logs, goals, summary, weight, coach
 from nutritrack.api.settings import get_settings
 
 logger = get_logger(__name__)
@@ -114,6 +114,7 @@ app.include_router(logs.router, prefix="/log", tags=["logs"])
 app.include_router(goals.router, prefix="/goals", tags=["goals"])
 app.include_router(summary.router, prefix="/summary", tags=["summary"])
 app.include_router(weight.router, prefix="/weight", tags=["weight"])
+app.include_router(coach.router, prefix="/coach", tags=["coach"])
 
 
 # Default endpoints
